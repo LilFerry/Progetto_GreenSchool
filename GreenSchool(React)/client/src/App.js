@@ -9,6 +9,8 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import './App.css';
 
 const API_URL = 'http://localhost:3001/api';
+/** Utente demo (ospite) presente nel database di esempio */
+const UTENTE_DEMO_ID = 'b2000000-0000-0000-0000-000000000002';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -101,7 +103,33 @@ function classeStato(stato) {
   return 'stato-badge--default';
 }
 
-function DettaglioAccumulatori({ stazione, accumulatori }) {
+function testoDisponibilitaAcc(acc) {
+  const livello = Number(acc.livello_corrente_kwh) || 0;
+  const stato = String(acc.stato_operativo ?? '').toLowerCase();
+  if (stato === 'guasto' || stato === 'manutenzione') {
+    return { ok: false, testo: 'Non disponibile (manutenzione/guasto)' };
+  }
+  if (livello <= 0.01) {
+    return { ok: false, testo: 'Non disponibile (scarico)' };
+  }
+  if (stato === 'scarica') {
+    return { ok: true, testo: 'In erogazione — energia disponibile' };
+  }
+  return { ok: true, testo: 'Disponibile per ricarica' };
+}
+
+function classeStatoColonnina(stato) {
+  if (stato === 'libera') return 'stato-badge--operativo';
+  if (stato === 'occupata') return 'stato-badge--manutenzione';
+  return 'stato-badge--guasto';
+}
+
+function DettaglioAccumulatori({
+  stazione,
+  accumulatori,
+  accumulatoreSelezionatoId,
+  onSelezionaAccumulatore,
+}) {
   if (!stazione) {
     return (
       <div className="card card--dettaglio">
@@ -120,70 +148,228 @@ function DettaglioAccumulatori({ stazione, accumulatori }) {
       <p className="page-subtitle dettaglio-indirizzo">
         {stazione.indirizzo} · {testoAccumulatori(lista.length)}
       </p>
+      <p className="page-subtitle elenco-hint">
+        Seleziona un accumulatore per vedere le colonnine compatibili e avviare la ricarica.
+      </p>
 
       {lista.length === 0 ? (
         <p>Nessun accumulatore registrato per questa stazione.</p>
       ) : (
         <div className="accumulatori-grid">
-          {lista.map((acc) => (
-            <article key={acc.id_accumulatore} className="accumulatore-card">
-              <h3 className="accumulatore-card__titolo">
-                {acc.nome ?? `Accumulatore ${acc.id_accumulatore}`}
-              </h3>
+          {lista.map((acc) => {
+            const disp = testoDisponibilitaAcc(acc);
+            const selezionato =
+              String(acc.id_accumulatore) === String(accumulatoreSelezionatoId);
 
-              <span className={`stato-badge ${classeStato(acc.stato_operativo)}`}>
-                {acc.stato_operativo ?? '—'}
-              </span>
+            return (
+              <article
+                key={acc.id_accumulatore}
+                className={
+                  selezionato
+                    ? 'accumulatore-card accumulatore-card--selected'
+                    : 'accumulatore-card'
+                }
+                onClick={() => onSelezionaAccumulatore(acc.id_accumulatore)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelezionaAccumulatore(acc.id_accumulatore);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <h3 className="accumulatore-card__titolo">
+                  {acc.nome ?? `Accumulatore ${acc.id_accumulatore}`}
+                </h3>
 
-              <div className="xp-bar">
-                <div
-                  className="xp-bar__fill"
-                  style={{
-                    width: `${Math.min(100, Math.max(0, Number(acc.percentuale_carica) || 0))}%`,
-                  }}
-                />
-              </div>
-              <p className="accumulatore-card__carica">
-                Carica: <strong>{acc.percentuale_carica ?? 0}%</strong>
-                {' '}
-                ({acc.livello_corrente_kwh ?? 0} /{' '}
-                {acc.capacita_utilizzabile_kwh ?? acc.capacita_totale_kwh ?? 0} kWh)
-              </p>
+                <span className={`stato-badge ${classeStato(acc.stato_operativo)}`}>
+                  {acc.stato_operativo ?? '—'}
+                </span>
+                <p
+                  className={
+                    disp.ok ? 'disp-label disp-label--ok' : 'disp-label disp-label--no'
+                  }
+                >
+                  {disp.testo}
+                </p>
 
-              <table className="data-table">
-                <tbody>
-                  <tr>
-                    <th>Capacità totale</th>
-                    <td>{acc.capacita_totale_kwh} kWh</td>
-                  </tr>
-                  <tr>
-                    <th>Capacità utilizzabile</th>
-                    <td>{acc.capacita_utilizzabile_kwh} kWh</td>
-                  </tr>
-                  <tr>
-                    <th>Potenza max carica</th>
-                    <td>{acc.potenza_max_carica_kw} kW</td>
-                  </tr>
-                  <tr>
-                    <th>Potenza max scarica</th>
-                    <td>{acc.potenza_max_scarica_kw} kW</td>
-                  </tr>
-                  <tr>
-                    <th>Soglie min / max</th>
-                    <td>
-                      {acc.soglia_minima_perc}% – {acc.soglia_massima_perc}%
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>Ultimo aggiornamento</th>
-                    <td>{formattaData(acc.data_ultimo_aggiornamento)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </article>
-          ))}
+                <div className="xp-bar">
+                  <div
+                    className="xp-bar__fill"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, Number(acc.percentuale_carica) || 0))}%`,
+                    }}
+                  />
+                </div>
+                <p className="accumulatore-card__carica">
+                  Carica: <strong>{acc.percentuale_carica ?? 0}%</strong>
+                  {' '}
+                  ({acc.livello_corrente_kwh ?? 0} /{' '}
+                  {acc.capacita_utilizzabile_kwh ?? acc.capacita_totale_kwh ?? 0} kWh)
+                </p>
+
+                <table className="data-table">
+                  <tbody>
+                    <tr>
+                      <th>Capacità totale</th>
+                      <td>{acc.capacita_totale_kwh} kWh</td>
+                    </tr>
+                    <tr>
+                      <th>Capacità utilizzabile</th>
+                      <td>{acc.capacita_utilizzabile_kwh} kWh</td>
+                    </tr>
+                    <tr>
+                      <th>Potenza max scarica</th>
+                      <td>{acc.potenza_max_scarica_kw} kW</td>
+                    </tr>
+                    <tr>
+                      <th>Ultimo aggiornamento</th>
+                      <td>{formattaData(acc.data_ultimo_aggiornamento)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </article>
+            );
+          })}
         </div>
       )}
+    </div>
+  );
+}
+
+function PannelloColonnine({
+  stazione,
+  accumulatoreSelezionato,
+  colonnine,
+  colonnineLoading,
+  colonninaSelezionataId,
+  onSelezionaColonnina,
+  onAvviaSessione,
+  sessioneAttiva,
+  avvioInCorso,
+}) {
+  if (!accumulatoreSelezionato) return null;
+
+  return (
+    <div className="card card--colonnine">
+      <h2 className="section-title">Punti di ricarica</h2>
+      <p className="page-subtitle">
+        Accumulatore: <strong>{accumulatoreSelezionato.nome}</strong>
+        {colonnine?.riepilogo && (
+          <>
+            {' '}
+            · {colonnine.riepilogo.libere} libere · {colonnine.riepilogo.occupate} occupate
+          </>
+        )}
+      </p>
+
+      {colonnineLoading && <p>Caricamento colonnine...</p>}
+
+      {!colonnineLoading && colonnine?.colonnine?.length === 0 && (
+        <p>Nessuna colonnina compatibile per questo accumulatore.</p>
+      )}
+
+      {!colonnineLoading && colonnine?.colonnine?.length > 0 && (
+        <ul className="colonnine-list">
+          {colonnine.colonnine.map((col) => {
+            const selezionata = col.id_punto === colonninaSelezionataId;
+            const disabilitata = !col.utilizzabile || sessioneAttiva;
+
+            return (
+              <li
+                key={col.id_punto}
+                className={
+                  selezionata
+                    ? 'colonnina-item colonnina-item--selected'
+                    : 'colonnina-item'
+                }
+              >
+                <button
+                  type="button"
+                  className="colonnina-item__btn"
+                  disabled={disabilitata}
+                  onClick={() => onSelezionaColonnina(col.id_punto)}
+                >
+                  <strong>{col.identificativo}</strong>
+                  <span className={`stato-badge ${classeStatoColonnina(col.stato)}`}>
+                    {col.stato}
+                  </span>
+                  <small>
+                    {col.tipo_veicolo} · {col.tipo_connettore} · {col.potenza_max_kw} kW
+                  </small>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {colonninaSelezionataId && !sessioneAttiva && (
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={avvioInCorso}
+          onClick={onAvviaSessione}
+        >
+          {avvioInCorso ? 'Avvio in corso...' : 'Avvia sessione di ricarica'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PannelloSessione({
+  sessioneAttiva,
+  statoLive,
+  onTermina,
+  terminaInCorso,
+  messaggio,
+}) {
+  if (!sessioneAttiva) return null;
+
+  const kwh =
+    statoLive?.kwh_erogati ??
+    sessioneAttiva.quantita_kwh ??
+    0;
+  const durata = statoLive?.durata_secondi;
+
+  return (
+    <div className="card card--sessione">
+      <h2 className="section-title">Sessione attiva</h2>
+      {messaggio && <p className="sessione-msg">{messaggio}</p>}
+      <table className="data-table">
+        <tbody>
+          <tr>
+            <th>Colonnina</th>
+            <td>{sessioneAttiva.identificativo ?? sessioneAttiva.id_punto}</td>
+          </tr>
+          <tr>
+            <th>Sessione</th>
+            <td className="mono">{sessioneAttiva.id_sessione}</td>
+          </tr>
+          <tr>
+            <th>Energia erogata</th>
+            <td>
+              <strong>{Number(kwh).toFixed(3)}</strong> kWh
+            </td>
+          </tr>
+          {durata != null && (
+            <tr>
+              <th>Durata</th>
+              <td>{Math.floor(durata / 60)} min {durata % 60} s</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      <button
+        type="button"
+        className="btn-danger"
+        disabled={terminaInCorso}
+        onClick={onTermina}
+      >
+        {terminaInCorso ? 'Chiusura...' : 'Termina ricarica'}
+      </button>
     </div>
   );
 }
@@ -236,11 +422,46 @@ function Mappa() {
   const [stazioni, setStazioni] = useState([]);
   const [accumulatori, setAccumulatori] = useState([]);
   const [stazioneSelezionataId, setStazioneSelezionataId] = useState(null);
+  const [accumulatoreSelezionatoId, setAccumulatoreSelezionatoId] = useState(null);
+  const [colonnine, setColonnine] = useState(null);
+  const [colonnineLoading, setColonnineLoading] = useState(false);
+  const [colonninaSelezionataId, setColonninaSelezionataId] = useState(null);
+  const [sessioneAttiva, setSessioneAttiva] = useState(null);
+  const [statoLive, setStatoLive] = useState(null);
+  const [avvioInCorso, setAvvioInCorso] = useState(false);
+  const [terminaInCorso, setTerminaInCorso] = useState(false);
+  const [messaggioSessione, setMessaggioSessione] = useState(null);
+  const [erroreAzione, setErroreAzione] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errore, setErrore] = useState(null);
 
   const stazioneSelezionata =
     stazioni.find((s) => s.id === stazioneSelezionataId) ?? null;
+
+  const accumulatoreSelezionato = accumulatori.find(
+    (a) => String(a.id_accumulatore) === String(accumulatoreSelezionatoId)
+  );
+
+  async function caricaColonnine(idStazione, idAccumulatore) {
+    setColonnineLoading(true);
+    setErroreAzione(null);
+    try {
+      const res = await axios.get(`${API_URL}/colonnine`, {
+        params: { id_stazione: idStazione, id_accumulatore: idAccumulatore },
+      });
+      if (res.data?.status === 'error') {
+        throw new Error(res.data.message);
+      }
+      setColonnine(res.data);
+    } catch (err) {
+      setColonnine(null);
+      setErroreAzione(
+        err.response?.data?.message || err.message || 'Errore caricamento colonnine'
+      );
+    } finally {
+      setColonnineLoading(false);
+    }
+  }
 
   useEffect(() => {
     async function caricaDati() {
@@ -248,6 +469,10 @@ function Mappa() {
         setLoading(true);
         setErrore(null);
         setStazioneSelezionataId(null);
+        setAccumulatoreSelezionatoId(null);
+        setColonninaSelezionataId(null);
+        setSessioneAttiva(null);
+        setStatoLive(null);
 
         const [resStazioni, resAccumulatori] = await Promise.all([
           axios.get(`${API_URL}/stazioniVicine`),
@@ -297,7 +522,162 @@ function Mappa() {
 
   function selezionaStazione(id) {
     setStazioneSelezionataId(String(id));
+    setAccumulatoreSelezionatoId(null);
+    setColonninaSelezionataId(null);
+    setColonnine(null);
+    setErroreAzione(null);
+    if (!sessioneAttiva) {
+      setMessaggioSessione(null);
+    }
   }
+
+  function selezionaAccumulatore(id) {
+    const idAcc = String(id);
+    setAccumulatoreSelezionatoId(idAcc);
+    setColonninaSelezionataId(null);
+    setColonnine(null);
+    if (stazioneSelezionataId) {
+      caricaColonnine(stazioneSelezionataId, idAcc);
+    }
+  }
+
+  function selezionaColonnina(idPunto) {
+    setColonninaSelezionataId(idPunto);
+    setErroreAzione(null);
+  }
+
+  async function avviaSessione() {
+    if (!colonninaSelezionataId || !accumulatoreSelezionatoId) return;
+    setAvvioInCorso(true);
+    setErroreAzione(null);
+    setMessaggioSessione(null);
+    try {
+      const res = await axios.post(`${API_URL}/sessione/avvia`, {
+        id_punto: colonninaSelezionataId,
+        id_utente: UTENTE_DEMO_ID,
+        id_accumulatore: accumulatoreSelezionatoId,
+        metodo_avvio: 'APP',
+      });
+      if (res.data?.status !== 'success') {
+        throw new Error(res.data?.message || 'Avvio sessione fallito');
+      }
+      const d = res.data.data;
+      setSessioneAttiva({
+        id_sessione: d.id_sessione,
+        id_punto: d.id_punto,
+        identificativo: d.identificativo,
+      });
+      setMessaggioSessione('Simulatore attivo: ricarica in corso.');
+      if (d.accumulatore && stazioneSelezionataId) {
+        setAccumulatori((prev) =>
+          prev.map((a) =>
+            String(a.id_accumulatore) === String(d.accumulatore.id_accumulatore)
+              ? { ...a, ...d.accumulatore }
+              : a
+          )
+        );
+      }
+      await caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
+    } catch (err) {
+      setErroreAzione(
+        err.response?.data?.message || err.message || 'Impossibile avviare la sessione'
+      );
+    } finally {
+      setAvvioInCorso(false);
+    }
+  }
+
+  async function terminaSessione() {
+    if (!sessioneAttiva?.id_sessione) return;
+    setTerminaInCorso(true);
+    setErroreAzione(null);
+    try {
+      const res = await axios.post(`${API_URL}/sessione/termina`, {
+        id_sessione: sessioneAttiva.id_sessione,
+      });
+      if (res.data?.status !== 'success') {
+        throw new Error(res.data?.message || 'Chiusura sessione fallita');
+      }
+      const d = res.data.data;
+      if (d.accumulatori_stazione?.length && stazioneSelezionataId) {
+        setAccumulatori((prev) => {
+          const aggiornati = new Map(
+            d.accumulatori_stazione.map((a) => [String(a.id_accumulatore), a])
+          );
+          return prev.map((a) => aggiornati.get(String(a.id_accumulatore)) ?? a);
+        });
+      } else if (d.accumulatore) {
+        setAccumulatori((prev) =>
+          prev.map((a) =>
+            String(a.id_accumulatore) === String(d.accumulatore.id_accumulatore)
+              ? { ...a, ...d.accumulatore }
+              : a
+          )
+        );
+      }
+      setSessioneAttiva(null);
+      setStatoLive(null);
+      setColonninaSelezionataId(null);
+      setMessaggioSessione(
+        `Sessione conclusa: ${d.sessione?.quantita_kwh ?? 0} kWh · € ${d.sessione?.costo_totale ?? 0}`
+      );
+      if (stazioneSelezionataId && accumulatoreSelezionatoId) {
+        await caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
+      }
+    } catch (err) {
+      setErroreAzione(
+        err.response?.data?.message || err.message || 'Impossibile terminare la sessione'
+      );
+    } finally {
+      setTerminaInCorso(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!sessioneAttiva?.id_sessione) return undefined;
+
+    let attivo = true;
+    async function poll() {
+      try {
+        const res = await axios.get(`${API_URL}/sessione/stato`, {
+          params: { id_sessione: sessioneAttiva.id_sessione },
+        });
+        if (!attivo || res.data?.status !== 'success') return;
+        const live = res.data.data?.live ?? null;
+        const sess = res.data.data?.sessione;
+        setStatoLive(live);
+        if (sess?.quantita_kwh != null) {
+          setSessioneAttiva((prev) =>
+            prev ? { ...prev, quantita_kwh: sess.quantita_kwh } : prev
+          );
+        }
+        if (res.data.data?.accumulatore) {
+          const acc = res.data.data.accumulatore;
+          setAccumulatori((prev) =>
+            prev.map((a) =>
+              String(a.id_accumulatore) === String(acc.id_accumulatore)
+                ? { ...a, ...acc }
+                : a
+            )
+          );
+        }
+        if (res.data.data?.sessione?.stato === 'terminata') {
+          setSessioneAttiva(null);
+          setStatoLive(null);
+          setMessaggioSessione('Sessione terminata automaticamente.');
+        }
+      } catch (err) {
+        console.warn('poll sessione:', err.message);
+      }
+    }
+
+    poll();
+    const timer = setInterval(poll, 5000);
+    return () => {
+      attivo = false;
+      clearInterval(timer);
+    };
+  }, [sessioneAttiva?.id_sessione]);
 
   if (loading) {
     return (
@@ -402,9 +782,33 @@ function Mappa() {
         </ul>
       </div>
 
+      {erroreAzione && <p className="mappa-errore">{erroreAzione}</p>}
+
       <DettaglioAccumulatori
         stazione={stazioneSelezionata}
         accumulatori={accumulatori}
+        accumulatoreSelezionatoId={accumulatoreSelezionatoId}
+        onSelezionaAccumulatore={selezionaAccumulatore}
+      />
+
+      <PannelloColonnine
+        stazione={stazioneSelezionata}
+        accumulatoreSelezionato={accumulatoreSelezionato}
+        colonnine={colonnine}
+        colonnineLoading={colonnineLoading}
+        colonninaSelezionataId={colonninaSelezionataId}
+        onSelezionaColonnina={selezionaColonnina}
+        onAvviaSessione={avviaSessione}
+        sessioneAttiva={sessioneAttiva}
+        avvioInCorso={avvioInCorso}
+      />
+
+      <PannelloSessione
+        sessioneAttiva={sessioneAttiva}
+        statoLive={statoLive}
+        onTermina={terminaSessione}
+        terminaInCorso={terminaInCorso}
+        messaggio={messaggioSessione}
       />
     </div>
   );
