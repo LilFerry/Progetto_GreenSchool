@@ -171,6 +171,8 @@ class ColonninaSimulator:
 
         return erogato >= delta_kwh * 0.01
 
+    
+
     def _registra_storico(self, livello_kwh: float, potenza_kw: float) -> None:
         with get_connection() as conn:
             cur = conn.cursor()

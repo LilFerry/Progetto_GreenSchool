@@ -9,4 +9,5 @@ $ris = $conn->query("SELECT * FROM vw_stato_colonnine;");
 $colonnine = $ris->fetchAll(PDO::FETCH_ASSOC);
 
 echo json_encode($colonnine);
+
 ?>

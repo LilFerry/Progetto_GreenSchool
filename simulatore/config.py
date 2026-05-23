@@ -11,6 +11,7 @@ DB_PASSWORD = os.getenv("GREENSCHOOL_DB_PASSWORD", "")
 # Intervallo tick simulazione ricarica (secondi)
 TICK_INTERVAL_SEC = float(os.getenv("SIM_TICK_SEC", "5"))
 
+
 # Ogni quanti secondi scrivere una misura nello storico batteria
 STORICO_INTERVAL_SEC = float(os.getenv("SIM_STORICO_SEC", "60"))
 

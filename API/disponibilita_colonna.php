@@ -86,7 +86,9 @@ try {
         }
     }
 
-    // ── Formattazione dei dati per ogni colonnina ─────────────────────────
+
+
+        // ── Formattazione dei dati per ogni colonnina ─────────────────────────
     $risultati = array_map(function ($c) {
         $info = [
             "id_punto"            => $c['id_punto'],

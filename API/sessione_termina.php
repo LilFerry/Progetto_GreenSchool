@@ -34,6 +34,8 @@ if ($idSessione === '' && $idPunto === '') {
     json_error('Specificare id_sessione oppure id_punto', 400);
 }
 
+
+
 try {
     $pdo = db_connect();
 

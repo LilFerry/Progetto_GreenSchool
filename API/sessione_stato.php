@@ -16,6 +16,8 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/sessione_helpers.php';
 require_once __DIR__ . '/includes/simulatore.php';
 
+
+
 $idSessione = trim((string) ($_GET['id_sessione'] ?? ''));
 if ($idSessione === '') {
     json_error('Parametro id_sessione obbligatorio', 400);

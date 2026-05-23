@@ -2,6 +2,7 @@
 
 from api import run
 
+
 if __name__ == "__main__":
     print("Simulatore colonnine GreenSchool")
     print("API disponibile su http://127.0.0.1:5050")

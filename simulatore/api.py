@@ -43,6 +43,8 @@ def avvia_simulazione():
         return _err(f"Errore interno: {e}", 500)
 
 
+
+
 @app.route("/sessione/avvia", methods=["POST"])
 def avvia_sessione():
     """
