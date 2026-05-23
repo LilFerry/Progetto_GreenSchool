@@ -51,20 +51,9 @@ try {
     $pdo = db_connect();
     $pdo->beginTransaction();
 
-    // Blocco colonnina: una sola sessione aperta per punto
+    // 1) Blocca la colonnina per primo (ordine lock anti-deadlock / concorrenza)
     $stmt = $pdo->prepare(
-        "SELECT id_sessione FROM sessioni_ricarica
-         WHERE id_punto = :punto AND data_fine IS NULL
-         LIMIT 1 FOR UPDATE"
-    );
-    $stmt->execute(['punto' => $idPunto]);
-    if ($stmt->fetch()) {
-        $pdo->rollBack();
-        json_error('Colonnina già occupata da un\'altra sessione', 409);
-    }
-
-    $stmt = $pdo->prepare(
-        "SELECT id_punto, id_stazione, identificativo_fisico, tipo_veicolo,
+        "SELECT id_punto, id_stazione, id_accumulatore, identificativo_fisico, tipo_veicolo,
                 potenza_max_kw, tariffa_predefinita, stato_hardware
          FROM punti_ricarica WHERE id_punto = :punto FOR UPDATE"
     );
@@ -78,6 +67,23 @@ try {
     if (in_array($punto['stato_hardware'], ['guasto', 'manutenzione_programmata'], true)) {
         $pdo->rollBack();
         json_error('Colonnina fuori servizio', 409, ['stato_hardware' => $punto['stato_hardware']]);
+    }
+
+    if ($punto['stato_hardware'] === 'offline') {
+        $pdo->rollBack();
+        json_error('Colonnina offline: impostarla online dall\'admin prima di avviare', 409);
+    }
+
+    // 2) Una sola sessione aperta per colonnina
+    $stmt = $pdo->prepare(
+        "SELECT id_sessione FROM sessioni_ricarica
+         WHERE id_punto = :punto AND data_fine IS NULL
+         LIMIT 1 FOR UPDATE"
+    );
+    $stmt->execute(['punto' => $idPunto]);
+    if ($stmt->fetch()) {
+        $pdo->rollBack();
+        json_error('Colonnina già occupata da un\'altra sessione', 409);
     }
 
     if ($idUtente) {
@@ -110,24 +116,34 @@ try {
         }
     }
 
-    $acc = seleziona_accumulatore($pdo, $punto['id_stazione'], $punto['tipo_veicolo']);
-    if (!$acc) {
-        $pdo->rollBack();
-        json_error('Nessun accumulatore disponibile per questa stazione', 409);
-    }
-
-    if ($idAccumulatore && $acc['id_accumulatore'] !== $idAccumulatore) {
-        $accRichiesto = carica_accumulatore($pdo, $idAccumulatore);
-        if (!$accRichiesto || $accRichiesto['id_stazione'] !== $punto['id_stazione']) {
+    $idAccPunto = (string) ($punto['id_accumulatore'] ?? '');
+    if ($idAccumulatore !== '') {
+        if ($idAccPunto !== '' && $idAccPunto !== $idAccumulatore) {
+            $pdo->rollBack();
+            json_error('Colonnina non collegata a questo accumulatore', 409);
+        }
+        $acc = carica_accumulatore($pdo, $idAccumulatore);
+        if (!$acc || $acc['id_stazione'] !== $punto['id_stazione']) {
             $pdo->rollBack();
             json_error('Accumulatore non compatibile con questa stazione', 409);
         }
-        $tipi = tipi_veicolo_per_accumulatore($accRichiesto['nome']);
+        $tipi = tipi_veicolo_per_accumulatore($acc['nome']);
         if (!in_array($punto['tipo_veicolo'], $tipi, true)) {
             $pdo->rollBack();
             json_error('Colonnina non compatibile con l\'accumulatore selezionato', 409);
         }
-        $acc = $accRichiesto;
+    } elseif ($idAccPunto !== '') {
+        $acc = carica_accumulatore($pdo, $idAccPunto);
+        if (!$acc) {
+            $pdo->rollBack();
+            json_error('Accumulatore del punto di ricarica non trovato', 404);
+        }
+    } else {
+        $acc = seleziona_accumulatore($pdo, $punto['id_stazione'], $punto['tipo_veicolo']);
+        if (!$acc) {
+            $pdo->rollBack();
+            json_error('Nessun accumulatore disponibile per questa stazione', 409);
+        }
     }
 
     $stmt = $pdo->prepare(
@@ -175,7 +191,7 @@ try {
 
     $pdo->commit();
 
-    $sim = simulatore_avvia($idSessione);
+    $sim = simulatore_avvia($idSessione, $acc['id_accumulatore']);
     if (!$sim['ok']) {
         $pdo->beginTransaction();
         annulla_sessione($pdo, $idSessione);

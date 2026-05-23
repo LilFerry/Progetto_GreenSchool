@@ -7,16 +7,23 @@
 | `sessione_avvia.php` | Crea sessione su DB, gestisce concorrenza, avvia simulatore Python |
 | `sessione_termina.php` | Chiude sessione via simulatore, restituisce dati aggiornati |
 | `sessione_stato.php` | Polling stato sessione |
+| `sessione_salva.php` | Salva chiusura su `sessioni_ricarica` e scala accumulatore |
+| `accumulatore_scarica.php` | Scala kWh da `accumulatori_stazione` |
+| `sessioni_lista.php` | Elenco sessioni concluse (storico) |
 | `colonnine_stazione.php` | Colonnine e disponibilità per stazione/accumulatore |
 | `includes/` | DB, client simulatore, helper |
 
 ## Deploy XAMPP
 
-Copia la cartella `API` in:
+Dopo ogni modifica alle API PHP eseguire (copia anche `includes/`):
 
-`C:\xampp\htdocs\Progetto_GreenSchool\API\`
+```powershell
+.\API\sync-xampp.ps1
+```
 
-URL esempio: `http://localhost/Progetto_GreenSchool/API/sessione_avvia.php`
+I file finiscono in `C:\xampp\htdocs\` (es. `sessione_avvia.php`, `includes\db.php`).
+
+URL esempio: `http://localhost/sessione_avvia.php`
 
 Se usi un percorso diverso, imposta nel server Node:
 

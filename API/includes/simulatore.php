@@ -89,9 +89,13 @@ function simulatore_request(string $method, string $path, ?array $payload = null
     ];
 }
 
-function simulatore_avvia(string $id_sessione): array
+function simulatore_avvia(string $id_sessione, ?string $id_accumulatore = null): array
 {
-    return simulatore_request('POST', '/simulazione/avvia', ['id_sessione' => $id_sessione]);
+    $payload = ['id_sessione' => $id_sessione];
+    if ($id_accumulatore) {
+        $payload['id_accumulatore'] = $id_accumulatore;
+    }
+    return simulatore_request('POST', '/simulazione/avvia', $payload);
 }
 
 function simulatore_termina(?string $id_sessione = null, ?string $id_punto = null): array

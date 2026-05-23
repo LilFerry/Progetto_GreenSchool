@@ -1,16 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+import { AuthProvider, useAuth } from './AuthContext';
 import './App.css';
 
 const API_URL = 'http://localhost:3001/api';
-/** Utente demo (ospite) presente nel database di esempio */
-const UTENTE_DEMO_ID = 'b2000000-0000-0000-0000-000000000002';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -119,119 +118,131 @@ function testoDisponibilitaAcc(acc) {
 }
 
 function classeStatoColonnina(stato) {
-  if (stato === 'libera') return 'stato-badge--operativo';
-  if (stato === 'occupata') return 'stato-badge--manutenzione';
-  return 'stato-badge--guasto';
+  if (stato === 'libera') return 'stato-badge--libera';
+  if (stato === 'occupata') return 'stato-badge--occupata';
+  if (stato === 'offline') return 'stato-badge--offline';
+  return 'stato-badge--fuori_servizio';
 }
 
-function DettaglioAccumulatori({
+/** Centra la mappa sulla stazione senza rimontare MapContainer */
+function CentraMappaSuStazione({ lat, lng, zoom }) {
+  const map = useMap();
+  useEffect(() => {
+    if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
+      return;
+    }
+    map.flyTo([lat, lng], zoom, { duration: 0.45 });
+  }, [lat, lng, zoom, map]);
+  return null;
+}
+
+function TabellaStazioni({ stazioni, stazioneSelezionataId, onSeleziona, disabilitata }) {
+  if (stazioni.length === 0) return null;
+
+  return (
+    <div className="card card--stazioni-riga">
+      <h2 className="section-title">Stazioni</h2>
+      <p className="page-subtitle elenco-hint">
+        Clicca una stazione per vedere gli accumulatori disponibili.
+      </p>
+      <div className="stazioni-riga-scroll">
+        <table className="stazioni-tabella">
+          <tbody>
+            <tr>
+              {stazioni.map((s) => {
+                const selezionata =
+                  String(s.id) === String(stazioneSelezionataId ?? '');
+                return (
+                  <td
+                    key={s.id}
+                    className={
+                      selezionata
+                        ? 'stazioni-tabella__cell stazioni-tabella__cell--selected'
+                        : 'stazioni-tabella__cell'
+                    }
+                  >
+                    <button
+                      type="button"
+                      className="stazioni-tabella__btn"
+                      disabled={disabilitata}
+                      onClick={() => onSeleziona(s.id)}
+                    >
+                      <span className="stazioni-tabella__nome">{s.nome}</span>
+                      <span className="stazioni-tabella__meta">{s.indirizzo}</span>
+                      <span className="stazioni-tabella__badge">
+                        {testoAccumulatori(s.numAccumulatori)}
+                      </span>
+                    </button>
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ListaAccumulatori({
   stazione,
   accumulatori,
   accumulatoreSelezionatoId,
-  onSelezionaAccumulatore,
+  onSeleziona,
+  compatto,
 }) {
-  if (!stazione) {
-    return (
-      <div className="card card--dettaglio">
-        <p className="page-subtitle" style={{ margin: 0 }}>
-          Seleziona una stazione dall&apos;elenco per vedere lo stato degli accumulatori.
-        </p>
-      </div>
-    );
-  }
-
   const lista = accumulatoriPerStazione(accumulatori, stazione.id);
 
   return (
-    <div className="card card--dettaglio">
-      <h2 className="section-title">{stazione.nome}</h2>
-      <p className="page-subtitle dettaglio-indirizzo">
-        {stazione.indirizzo} · {testoAccumulatori(lista.length)}
-      </p>
+    <div className={`card card--accumulatori-riga${compatto ? ' card--step-compatto' : ''}`}>
+      <h2 className="section-title">Accumulatori</h2>
       <p className="page-subtitle elenco-hint">
-        Seleziona un accumulatore per vedere le colonnine compatibili e avviare la ricarica.
+        {compatto
+          ? 'Clicca un altro accumulatore per cambiare colonnina'
+          : `${testoAccumulatori(lista.length)} · scegli dove prelevare energia`}
       </p>
 
       {lista.length === 0 ? (
-        <p>Nessun accumulatore registrato per questa stazione.</p>
+        <p>Nessun accumulatore per questa stazione.</p>
       ) : (
-        <div className="accumulatori-grid">
-          {lista.map((acc) => {
-            const disp = testoDisponibilitaAcc(acc);
-            const selezionato =
-              String(acc.id_accumulatore) === String(accumulatoreSelezionatoId);
-
-            return (
-              <article
-                key={acc.id_accumulatore}
-                className={
-                  selezionato
-                    ? 'accumulatore-card accumulatore-card--selected'
-                    : 'accumulatore-card'
-                }
-                onClick={() => onSelezionaAccumulatore(acc.id_accumulatore)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onSelezionaAccumulatore(acc.id_accumulatore);
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-              >
-                <h3 className="accumulatore-card__titolo">
-                  {acc.nome ?? `Accumulatore ${acc.id_accumulatore}`}
-                </h3>
-
-                <span className={`stato-badge ${classeStato(acc.stato_operativo)}`}>
-                  {acc.stato_operativo ?? '—'}
-                </span>
-                <p
-                  className={
-                    disp.ok ? 'disp-label disp-label--ok' : 'disp-label disp-label--no'
-                  }
-                >
-                  {disp.testo}
-                </p>
-
-                <div className="xp-bar">
-                  <div
-                    className="xp-bar__fill"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, Number(acc.percentuale_carica) || 0))}%`,
-                    }}
-                  />
-                </div>
-                <p className="accumulatore-card__carica">
-                  Carica: <strong>{acc.percentuale_carica ?? 0}%</strong>
-                  {' '}
-                  ({acc.livello_corrente_kwh ?? 0} /{' '}
-                  {acc.capacita_utilizzabile_kwh ?? acc.capacita_totale_kwh ?? 0} kWh)
-                </p>
-
-                <table className="data-table">
-                  <tbody>
-                    <tr>
-                      <th>Capacità totale</th>
-                      <td>{acc.capacita_totale_kwh} kWh</td>
-                    </tr>
-                    <tr>
-                      <th>Capacità utilizzabile</th>
-                      <td>{acc.capacita_utilizzabile_kwh} kWh</td>
-                    </tr>
-                    <tr>
-                      <th>Potenza max scarica</th>
-                      <td>{acc.potenza_max_scarica_kw} kW</td>
-                    </tr>
-                    <tr>
-                      <th>Ultimo aggiornamento</th>
-                      <td>{formattaData(acc.data_ultimo_aggiornamento)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </article>
-            );
-          })}
+        <div className="accumulatori-riga-scroll">
+          <table className="accumulatori-tabella">
+            <tbody>
+              <tr>
+                {lista.map((acc) => {
+                  const disp = testoDisponibilitaAcc(acc);
+                  const perc = Math.min(100, Math.max(0, Number(acc.percentuale_carica) || 0));
+                  const selezionato =
+                    String(acc.id_accumulatore) === String(accumulatoreSelezionatoId);
+                  return (
+                    <td key={acc.id_accumulatore} className="accumulatori-tabella__cell">
+                      <button
+                        type="button"
+                        className={
+                          selezionato
+                            ? 'accumulatore-riga-card accumulatore-riga-card--selected'
+                            : 'accumulatore-riga-card'
+                        }
+                        onClick={() => onSeleziona(acc.id_accumulatore)}
+                      >
+                        <strong>{acc.nome ?? 'Accumulatore'}</strong>
+                        <span className={`stato-badge ${classeStato(acc.stato_operativo)}`}>
+                          {acc.stato_operativo}
+                        </span>
+                        <div className="xp-bar xp-bar--compact">
+                          <div className="xp-bar__fill" style={{ width: `${perc}%` }} />
+                        </div>
+                        <span className="accumulatore-riga-card__perc">{perc}%</span>
+                        <small className={disp.ok ? 'disp-label--ok' : 'disp-label--no'}>
+                          {disp.testo}
+                        </small>
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -239,28 +250,27 @@ function DettaglioAccumulatori({
 }
 
 function PannelloColonnine({
-  stazione,
-  accumulatoreSelezionato,
   colonnine,
   colonnineLoading,
   colonninaSelezionataId,
   onSelezionaColonnina,
   onAvviaSessione,
-  sessioneAttiva,
   avvioInCorso,
+  soloLettura,
 }) {
-  if (!accumulatoreSelezionato) return null;
-
   return (
     <div className="card card--colonnine">
       <h2 className="section-title">Punti di ricarica</h2>
-      <p className="page-subtitle">
-        Accumulatore: <strong>{accumulatoreSelezionato.nome}</strong>
-        {colonnine?.riepilogo && (
+      <p className="page-subtitle elenco-hint">
+        {colonnine?.riepilogo ? (
           <>
-            {' '}
-            · {colonnine.riepilogo.libere} libere · {colonnine.riepilogo.occupate} occupate
+            {colonnine.riepilogo.libere} libere · {colonnine.riepilogo.occupate} occupate
+            {colonnine.riepilogo.offline > 0 && ` · ${colonnine.riepilogo.offline} offline`}
           </>
+        ) : soloLettura ? (
+          'Stato colonnine (solo visualizzazione)'
+        ) : (
+          'Seleziona una colonnina e avvia la ricarica'
         )}
       </p>
 
@@ -271,50 +281,129 @@ function PannelloColonnine({
       )}
 
       {!colonnineLoading && colonnine?.colonnine?.length > 0 && (
-        <ul className="colonnine-list">
-          {colonnine.colonnine.map((col) => {
-            const selezionata = col.id_punto === colonninaSelezionataId;
-            const disabilitata = !col.utilizzabile || sessioneAttiva;
+        <div className="colonnine-riga-scroll">
+          <table className="colonnine-tabella">
+            <tbody>
+              <tr>
+                {colonnine.colonnine.map((col) => {
+                  const selezionata = col.id_punto === colonninaSelezionataId;
+                  const disabilitata = !col.utilizzabile;
 
-            return (
-              <li
-                key={col.id_punto}
-                className={
-                  selezionata
-                    ? 'colonnina-item colonnina-item--selected'
-                    : 'colonnina-item'
-                }
-              >
-                <button
-                  type="button"
-                  className="colonnina-item__btn"
-                  disabled={disabilitata}
-                  onClick={() => onSelezionaColonnina(col.id_punto)}
-                >
-                  <strong>{col.identificativo}</strong>
-                  <span className={`stato-badge ${classeStatoColonnina(col.stato)}`}>
-                    {col.stato}
-                  </span>
-                  <small>
-                    {col.tipo_veicolo} · {col.tipo_connettore} · {col.potenza_max_kw} kW
-                  </small>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                  return (
+                    <td key={col.id_punto} className="colonnine-tabella__cell">
+                      <button
+                        type="button"
+                        className={
+                          selezionata
+                            ? 'colonnina-riga-card colonnina-riga-card--selected'
+                            : 'colonnina-riga-card'
+                        }
+                        disabled={soloLettura || disabilitata}
+                        onClick={() => {
+                          if (!soloLettura) onSelezionaColonnina(col.id_punto);
+                        }}
+                      >
+                        <strong>{col.identificativo}</strong>
+                        <span className={`stato-badge ${classeStatoColonnina(col.stato)}`}>
+                          {col.stato}
+                        </span>
+                        <small>
+                          {col.tipo_veicolo} · {col.tipo_connettore}
+                        </small>
+                        <small>{col.potenza_max_kw} kW</small>
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {colonninaSelezionataId && !sessioneAttiva && (
+      {!soloLettura && colonninaSelezionataId && (
         <button
           type="button"
-          className="btn-primary"
+          className="btn-primary btn-primary--wide"
           disabled={avvioInCorso}
           onClick={onAvviaSessione}
         >
           {avvioInCorso ? 'Avvio in corso...' : 'Avvia sessione di ricarica'}
         </button>
       )}
+    </div>
+  );
+}
+
+function ModalRiepilogo({ riepilogo, stazioneNome, onChiudi }) {
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') onChiudi();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onChiudi]);
+
+  if (!riepilogo) return null;
+
+  const kwh = Number(riepilogo.quantita_kwh ?? 0);
+  const costo = Number(riepilogo.costo_totale ?? 0);
+  const minuti = riepilogo.durata_minuti;
+
+  return (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-riepilogo-titolo"
+      onClick={onChiudi}
+    >
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2 id="modal-riepilogo-titolo" className="section-title">
+          Ricarica completata
+        </h2>
+        <p className="page-subtitle">Ecco il resoconto della sessione.</p>
+        <table className="data-table">
+          <tbody>
+            {stazioneNome && (
+              <tr>
+                <th>Stazione</th>
+                <td>{stazioneNome}</td>
+              </tr>
+            )}
+            <tr>
+              <th>Colonnina</th>
+              <td>{riepilogo.identificativo ?? riepilogo.id_punto}</td>
+            </tr>
+            <tr>
+              <th>Energia erogata</th>
+              <td>
+                <strong>{kwh.toFixed(3)}</strong> kWh
+              </td>
+            </tr>
+            {minuti != null && (
+              <tr>
+                <th>Durata</th>
+                <td>
+                  {minuti} min
+                  {riepilogo.durata_secondi != null && (
+                    <> ({riepilogo.durata_secondi % 60} s)</>
+                  )}
+                </td>
+              </tr>
+            )}
+            <tr>
+              <th>Totale</th>
+              <td>
+                <strong>€ {costo.toFixed(2)}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <button type="button" className="btn-primary btn-primary--wide" onClick={onChiudi}>
+          Chiudi
+        </button>
+      </div>
     </div>
   );
 }
@@ -335,8 +424,8 @@ function PannelloSessione({
   const durata = statoLive?.durata_secondi;
 
   return (
-    <div className="card card--sessione">
-      <h2 className="section-title">Sessione attiva</h2>
+    <div className="card card--sessione card--sessione-focus">
+      <h2 className="section-title">Sessione di ricarica in corso</h2>
       {messaggio && <p className="sessione-msg">{messaggio}</p>}
       <table className="data-table">
         <tbody>
@@ -375,17 +464,219 @@ function PannelloSessione({
 }
 
 function Navbar() {
+  const { utente, isAdmin, logout } = useAuth();
+  const location = useLocation();
+
+  function linkClass(path) {
+    return location.pathname === path ? 'navbar__link navbar__link--active' : 'navbar__link';
+  }
+
   return (
     <nav className="navbar">
-      <Link to="/" className="navbar__brand">GreenSchool</Link>
-      <Link to="/" className="navbar__link">Dashboard</Link>
-      <Link to="/storico" className="navbar__link">Storico</Link>
-      <Link to="/mappa" className="navbar__link">Mappa</Link>
-      <Link to="/scuola" className="navbar__link">Scuola</Link>
-      <Link to="/game" className="navbar__link">Gamification</Link>
-      <Link to="/admin" className="navbar__link">Admin</Link>
+      <Link to={isAdmin ? '/admin' : '/'} className="navbar__brand">
+        GreenSchool
+      </Link>
+      {isAdmin ? (
+        <>
+          <Link to="/mappa" className={linkClass('/mappa')}>Mappa</Link>
+          <Link to="/admin" className={linkClass('/admin')}>Admin</Link>
+        </>
+      ) : (
+        <>
+          <Link to="/" className={linkClass('/')}>Dashboard</Link>
+          <Link to="/mappa" className={linkClass('/mappa')}>Mappa</Link>
+          <Link to="/storico" className={linkClass('/storico')}>Storico</Link>
+        </>
+      )}
+      <div className="navbar__user">
+        <span className="navbar__user-name">
+          {utente?.nome} {utente?.cognome}
+          {isAdmin && <span className="navbar__badge">Admin</span>}
+        </span>
+        <button type="button" className="navbar__logout" onClick={logout}>
+          Esci
+        </button>
+      </div>
     </nav>
   );
+}
+
+function PaginaAuth() {
+  const { login } = useAuth();
+  const [modalita, setModalita] = useState('login');
+  const [invio, setInvio] = useState(false);
+  const [errore, setErrore] = useState(null);
+
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [regForm, setRegForm] = useState({
+    nome: '',
+    cognome: '',
+    email: '',
+    password: '',
+    cellulare: '',
+  });
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    setInvio(true);
+    setErrore(null);
+    try {
+      const res = await axios.post(`${API_URL}/auth/login`, loginForm);
+      if (res.status >= 400 || res.data?.status !== 'success') {
+        throw new Error(res.data?.message || 'Login fallito');
+      }
+      login(res.data.data.utente);
+    } catch (err) {
+      setErrore(err.response?.data?.message || err.message || 'Accesso non riuscito');
+    } finally {
+      setInvio(false);
+    }
+  }
+
+  async function handleRegistra(e) {
+    e.preventDefault();
+    setInvio(true);
+    setErrore(null);
+    try {
+      const res = await axios.post(`${API_URL}/auth/registra`, regForm);
+      if (res.status >= 400 || res.data?.status !== 'success') {
+        throw new Error(res.data?.message || 'Registrazione fallita');
+      }
+      login(res.data.data.utente);
+    } catch (err) {
+      setErrore(err.response?.data?.message || err.message || 'Registrazione non riuscita');
+    } finally {
+      setInvio(false);
+    }
+  }
+
+  return (
+    <div className="auth-page">
+      <div className="auth-card card">
+        <h1 className="page-title">GreenSchool</h1>
+        <p className="page-subtitle">Accedi o crea un account per usare le stazioni di ricarica</p>
+
+        <div className="auth-tabs">
+          <button
+            type="button"
+            className={modalita === 'login' ? 'auth-tab auth-tab--active' : 'auth-tab'}
+            onClick={() => { setModalita('login'); setErrore(null); }}
+          >
+            Accedi
+          </button>
+          <button
+            type="button"
+            className={modalita === 'registra' ? 'auth-tab auth-tab--active' : 'auth-tab'}
+            onClick={() => { setModalita('registra'); setErrore(null); }}
+          >
+            Registrati
+          </button>
+        </div>
+
+        {errore && <p className="mappa-errore">{errore}</p>}
+
+        {modalita === 'login' ? (
+          <form className="auth-form" onSubmit={handleLogin}>
+            <label>
+              Email
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={loginForm.email}
+                onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                required
+                autoComplete="current-password"
+                value={loginForm.password}
+                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+              />
+            </label>
+            <p className="auth-hint">
+              Admin: <code>admin@stazionericarica.it</code> / <code>admin123</code>
+            </p>
+            <button type="submit" className="btn-primary" disabled={invio}>
+              {invio ? 'Accesso...' : 'Entra'}
+            </button>
+          </form>
+        ) : (
+          <form className="auth-form" onSubmit={handleRegistra}>
+            <label>
+              Nome
+              <input
+                type="text"
+                required
+                value={regForm.nome}
+                onChange={(e) => setRegForm({ ...regForm, nome: e.target.value })}
+              />
+            </label>
+            <label>
+              Cognome
+              <input
+                type="text"
+                required
+                value={regForm.cognome}
+                onChange={(e) => setRegForm({ ...regForm, cognome: e.target.value })}
+              />
+            </label>
+            <label>
+              Email
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={regForm.email}
+                onChange={(e) => setRegForm({ ...regForm, email: e.target.value })}
+              />
+            </label>
+            <label>
+              Cellulare <span className="auth-optional">(opzionale)</span>
+              <input
+                type="tel"
+                value={regForm.cellulare}
+                onChange={(e) => setRegForm({ ...regForm, cellulare: e.target.value })}
+              />
+            </label>
+            <label>
+              Password <span className="auth-optional">(min. 6 caratteri)</span>
+              <input
+                type="password"
+                required
+                minLength={6}
+                autoComplete="new-password"
+                value={regForm.password}
+                onChange={(e) => setRegForm({ ...regForm, password: e.target.value })}
+              />
+            </label>
+            <button type="submit" className="btn-primary" disabled={invio}>
+              {invio ? 'Registrazione...' : 'Crea account'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RequireAdmin({ children }) {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+  return children;
+}
+
+function SoloUtente({ children }) {
+  const { isAdmin } = useAuth();
+  if (isAdmin) {
+    return <Navigate to="/mappa" replace />;
+  }
+  return children;
 }
 
 function PlaceholderPagina({ titolo }) {
@@ -402,23 +693,715 @@ function Dashboard() {
   return <PlaceholderPagina titolo="Dashboard" />;
 }
 
+function etichettaStatoRicarica(stato) {
+  if (stato === 'in_corso') return 'In corso';
+  if (stato === 'annullata') return 'Annullata';
+  return 'Conclusa';
+}
+
 function Storico() {
-  return <PlaceholderPagina titolo="Storico sessioni" />;
-}
+  const { utente } = useAuth();
+  const [sessioni, setSessioni] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errore, setErrore] = useState(null);
 
-function Scuola() {
-  return <PlaceholderPagina titolo="Scuola & Green School" />;
-}
+  useEffect(() => {
+    if (!utente?.id_utente) return undefined;
 
-function Gamification() {
-  return <PlaceholderPagina titolo="Gamification" />;
+    async function carica() {
+      setLoading(true);
+      setErrore(null);
+      try {
+        const res = await axios.get(`${API_URL}/sessioni`, {
+          params: { limite: 200, id_utente: utente.id_utente },
+        });
+        if (res.data?.status !== 'success') {
+          throw new Error(res.data?.message || 'Errore caricamento storico');
+        }
+        setSessioni(res.data.data ?? []);
+      } catch (err) {
+        setErrore(
+          err.response?.data?.message || err.message || 'Impossibile caricare lo storico.'
+        );
+        setSessioni([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    carica();
+  }, [utente?.id_utente]);
+
+  const totaleKwh = sessioni.reduce((s, r) => s + Number(r.quantita_kwh ?? 0), 0);
+  const totaleEuro = sessioni.reduce((s, r) => s + Number(r.costo_totale ?? 0), 0);
+
+  return (
+    <div>
+      <h1 className="page-title">Storico sessioni</h1>
+      <p className="page-subtitle">
+        Tutte le tue ricariche da <strong>sessioni_ricarica</strong> · {utente?.nome}{' '}
+        {utente?.cognome}
+      </p>
+
+      {loading && <p>Caricamento...</p>}
+      {errore && <p className="mappa-errore">{errore}</p>}
+
+      {!loading && !errore && sessioni.length === 0 && (
+        <p>Nessuna ricarica registrata. Avvia una sessione dalla Mappa.</p>
+      )}
+
+      {!loading && sessioni.length > 0 && (
+        <>
+          <p className="page-subtitle">
+            {sessioni.length} sessioni · {totaleKwh.toFixed(2)} kWh totali · €{' '}
+            {totaleEuro.toFixed(2)}
+          </p>
+          <div className="card card--storico-scroll">
+            <table className="data-table data-table--storico">
+              <thead>
+                <tr>
+                  <th>Stato</th>
+                  <th>Inizio</th>
+                  <th>Fine</th>
+                  <th>Stazione</th>
+                  <th>Colonnina</th>
+                  <th>Veicolo</th>
+                  <th>kWh</th>
+                  <th>Durata</th>
+                  <th>€</th>
+                  <th>Pagamento</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessioni.map((s) => (
+                  <tr key={s.id_sessione}>
+                    <td>
+                      <span className={`stato-badge stato-badge--${s.stato_ricarica}`}>
+                        {etichettaStatoRicarica(s.stato_ricarica)}
+                      </span>
+                    </td>
+                    <td>
+                      {s.data_inizio
+                        ? new Date(s.data_inizio).toLocaleString('it-IT')
+                        : '—'}
+                    </td>
+                    <td>
+                      {s.data_fine
+                        ? new Date(s.data_fine).toLocaleString('it-IT')
+                        : '—'}
+                    </td>
+                    <td>{s.nome_stazione}</td>
+                    <td>
+                      <strong>{s.identificativo_colonnina}</strong>
+                      <br />
+                      <small>
+                        {s.tipo_connettore} · {s.potenza_max_kw} kW
+                      </small>
+                    </td>
+                    <td>{s.tipo_veicolo}</td>
+                    <td>{Number(s.quantita_kwh ?? 0).toFixed(3)}</td>
+                    <td>
+                      {s.durata_minuti != null && s.durata_minuti > 0
+                        ? `${s.durata_minuti} min`
+                        : s.durata_secondi != null
+                          ? `${s.durata_secondi} s`
+                          : '—'}
+                    </td>
+                    <td>€ {Number(s.costo_totale ?? 0).toFixed(2)}</td>
+                    <td>{s.stato_pagamento}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function Admin() {
-  return <PlaceholderPagina titolo="Pannello Admin" />;
+  const { utente } = useAuth();
+  const [tab, setTab] = useState('stazioni');
+  const [stazioni, setStazioni] = useState([]);
+  const [colonnine, setColonnine] = useState([]);
+  const [stazioneSel, setStazioneSel] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [errore, setErrore] = useState(null);
+  const [messaggio, setMessaggio] = useState(null);
+
+  const oggiIso = () => new Date().toISOString().slice(0, 10);
+  const [reportData, setReportData] = useState(oggiIso);
+  const [reportStazione, setReportStazione] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportPayload, setReportPayload] = useState(null);
+
+  const [formStazione, setFormStazione] = useState({
+    id_stazione: '',
+    nome: '',
+    indirizzo: '',
+    latitudine: '45.68',
+    longitudine: '11.94',
+    tipo_area: 'pubblico',
+  });
+
+  const [formColonnina, setFormColonnina] = useState({
+    id_punto: '',
+    identificativo: '',
+    tipo_veicolo: 'auto',
+    tipo_connettore: 'CCS2',
+    potenza_max_kw: '22',
+    tariffa_kwh: '0.5',
+    stato_hardware: 'online',
+  });
+
+  const adminParams = { id_utente_admin: utente?.id_utente };
+
+  async function caricaStazioni() {
+    setLoading(true);
+    setErrore(null);
+    try {
+      const res = await axios.get(`${API_URL}/admin/stazioni`, { params: adminParams });
+      if (res.data?.status !== 'success') throw new Error(res.data?.message);
+      setStazioni(res.data.data ?? []);
+    } catch (err) {
+      setErrore(err.response?.data?.message || err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function caricaColonnine(idStazione) {
+    if (!idStazione) {
+      setColonnine([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/admin/colonnine`, {
+        params: { ...adminParams, id_stazione: idStazione },
+      });
+      if (res.data?.status !== 'success') throw new Error(res.data?.message);
+      setColonnine(res.data.data ?? []);
+    } catch (err) {
+      setErrore(err.response?.data?.message || err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    caricaStazioni();
+  }, []);
+
+  useEffect(() => {
+    if (stazioneSel) caricaColonnine(stazioneSel);
+  }, [stazioneSel]);
+
+  async function caricaReport() {
+    setReportLoading(true);
+    setErrore(null);
+    try {
+      const params = {
+        ...adminParams,
+        data: reportData,
+      };
+      if (reportStazione) params.id_stazione = reportStazione;
+
+      const res = await axios.get(`${API_URL}/admin/report-giornaliero`, { params });
+      if (res.data?.status !== 'success') throw new Error(res.data?.message);
+      setReportPayload(res.data);
+    } catch (err) {
+      setReportPayload(null);
+      const msg = err.response?.data?.message || err.message;
+      setErrore(
+        msg?.includes('JSON') || msg?.includes('vuota')
+          ? 'Report non disponibile: esegui API/sync-xampp.ps1 e riavvia Apache.'
+          : msg
+      );
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (tab === 'report') caricaReport();
+  }, [tab, reportData, reportStazione]);
+
+  async function salvaStazione(e) {
+    e.preventDefault();
+    setErrore(null);
+    setMessaggio(null);
+    try {
+      const res = await axios.post(`${API_URL}/admin/stazioni`, {
+        ...adminParams,
+        ...formStazione,
+        latitudine: parseFloat(formStazione.latitudine),
+        longitudine: parseFloat(formStazione.longitudine),
+      });
+      if (res.data?.status !== 'success') throw new Error(res.data?.message);
+      setMessaggio(res.data.message);
+      setFormStazione({
+        id_stazione: '',
+        nome: '',
+        indirizzo: '',
+        latitudine: '45.68',
+        longitudine: '11.94',
+        tipo_area: 'pubblico',
+      });
+      await caricaStazioni();
+    } catch (err) {
+      setErrore(err.response?.data?.message || err.message);
+    }
+  }
+
+  async function eliminaStazione(id) {
+    if (!window.confirm('Eliminare la stazione e tutte le colonnine collegate?')) return;
+    try {
+      const res = await axios.post(`${API_URL}/admin/stazioni`, {
+        ...adminParams,
+        azione: 'elimina',
+        id_stazione: id,
+      });
+      if (res.data?.status !== 'success') throw new Error(res.data?.message);
+      setMessaggio('Stazione eliminata');
+      if (stazioneSel === id) setStazioneSel('');
+      await caricaStazioni();
+    } catch (err) {
+      setErrore(err.response?.data?.message || err.message);
+    }
+  }
+
+  async function salvaColonnina(e) {
+    e.preventDefault();
+    if (!stazioneSel) {
+      setErrore('Seleziona una stazione');
+      return;
+    }
+    setErrore(null);
+    try {
+      const res = await axios.post(`${API_URL}/admin/colonnine`, {
+        ...adminParams,
+        id_stazione: stazioneSel,
+        ...formColonnina,
+        potenza_max_kw: parseFloat(formColonnina.potenza_max_kw),
+        tariffa_kwh: parseFloat(formColonnina.tariffa_kwh),
+      });
+      if (res.data?.status !== 'success') throw new Error(res.data?.message);
+      setMessaggio(res.data.message);
+      setFormColonnina({
+        id_punto: '',
+        identificativo: '',
+        tipo_veicolo: 'auto',
+        tipo_connettore: 'CCS2',
+        potenza_max_kw: '22',
+        tariffa_kwh: '0.5',
+        stato_hardware: 'online',
+      });
+      await caricaColonnine(stazioneSel);
+    } catch (err) {
+      setErrore(err.response?.data?.message || err.message);
+    }
+  }
+
+  async function eliminaColonnina(id) {
+    if (!window.confirm('Eliminare questa colonnina?')) return;
+    try {
+      const res = await axios.post(`${API_URL}/admin/colonnine`, {
+        ...adminParams,
+        azione: 'elimina',
+        id_punto: id,
+      });
+      if (res.data?.status !== 'success') throw new Error(res.data?.message);
+      setMessaggio('Colonnina eliminata');
+      await caricaColonnine(stazioneSel);
+    } catch (err) {
+      setErrore(err.response?.data?.message || err.message);
+    }
+  }
+
+  async function mettiOnlineTutte() {
+    if (!stazioneSel) return;
+    try {
+      const res = await axios.post(`${API_URL}/admin/colonnine`, {
+        ...adminParams,
+        azione: 'online_tutte',
+        id_stazione: stazioneSel,
+      });
+      if (res.data?.status !== 'success') throw new Error(res.data?.message);
+      setMessaggio(res.data.message);
+      await caricaColonnine(stazioneSel);
+    } catch (err) {
+      setErrore(err.response?.data?.message || err.message);
+    }
+  }
+
+  function modificaStazione(s) {
+    setFormStazione({
+      id_stazione: s.id_stazione,
+      nome: s.nome,
+      indirizzo: s.indirizzo || '',
+      latitudine: String(s.latitudine),
+      longitudine: String(s.longitudine),
+      tipo_area: s.tipo_area || 'pubblico',
+    });
+    setStazioneSel(s.id_stazione);
+    setTab('stazioni');
+  }
+
+  function modificaColonnina(c) {
+    setFormColonnina({
+      id_punto: c.id_punto,
+      identificativo: c.identificativo,
+      tipo_veicolo: c.tipo_veicolo,
+      tipo_connettore: c.tipo_connettore || 'CCS2',
+      potenza_max_kw: String(c.potenza_max_kw),
+      tariffa_kwh: String(c.tariffa_kwh),
+      stato_hardware: c.stato_hardware,
+    });
+  }
+
+  return (
+    <div>
+      <h1 className="page-title">Pannello Admin</h1>
+      <p className="page-subtitle">Gestione stazioni e colonnine · {utente?.email}</p>
+
+      <div className="admin-tabs">
+        <button
+          type="button"
+          className={tab === 'stazioni' ? 'auth-tab auth-tab--active' : 'auth-tab'}
+          onClick={() => setTab('stazioni')}
+        >
+          Stazioni
+        </button>
+        <button
+          type="button"
+          className={tab === 'colonnine' ? 'auth-tab auth-tab--active' : 'auth-tab'}
+          onClick={() => setTab('colonnine')}
+        >
+          Colonnine
+        </button>
+        <button
+          type="button"
+          className={tab === 'report' ? 'auth-tab auth-tab--active' : 'auth-tab'}
+          onClick={() => setTab('report')}
+        >
+          Report giornaliero
+        </button>
+      </div>
+
+      {errore && <p className="mappa-errore">{errore}</p>}
+      {messaggio && <p className="sessione-msg">{messaggio}</p>}
+      {loading && <p>Caricamento...</p>}
+
+      {tab === 'stazioni' && (
+        <div className="admin-grid">
+          <div className="card">
+            <h2 className="section-title">{formStazione.id_stazione ? 'Modifica' : 'Nuova'} stazione</h2>
+            <form className="auth-form" onSubmit={salvaStazione}>
+              <label>
+                Nome
+                <input
+                  required
+                  value={formStazione.nome}
+                  onChange={(e) => setFormStazione({ ...formStazione, nome: e.target.value })}
+                />
+              </label>
+              <label>
+                Indirizzo
+                <input
+                  value={formStazione.indirizzo}
+                  onChange={(e) => setFormStazione({ ...formStazione, indirizzo: e.target.value })}
+                />
+              </label>
+              <label>
+                Latitudine
+                <input
+                  required
+                  value={formStazione.latitudine}
+                  onChange={(e) => setFormStazione({ ...formStazione, latitudine: e.target.value })}
+                />
+              </label>
+              <label>
+                Longitudine
+                <input
+                  required
+                  value={formStazione.longitudine}
+                  onChange={(e) => setFormStazione({ ...formStazione, longitudine: e.target.value })}
+                />
+              </label>
+              <button type="submit" className="btn-primary">Salva stazione</button>
+            </form>
+          </div>
+          <div className="card">
+            <h2 className="section-title">Elenco stazioni</h2>
+            <ul className="admin-list">
+              {stazioni.map((s) => (
+                <li key={s.id_stazione} className="admin-list__item">
+                  <div>
+                    <strong>{s.nome}</strong>
+                    <br />
+                    <small>
+                      {s.num_colonnine} colonnine · {s.colonnine_occupate} occupate
+                    </small>
+                  </div>
+                  <div className="admin-list__actions">
+                    <button type="button" className="btn-secondary" onClick={() => modificaStazione(s)}>
+                      Modifica
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-danger"
+                      onClick={() => eliminaStazione(s.id_stazione)}
+                    >
+                      Elimina
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {tab === 'colonnine' && (
+        <div className="admin-grid">
+          <div className="card">
+            <h2 className="section-title">Stazione</h2>
+            <select
+              className="admin-select"
+              value={stazioneSel}
+              onChange={(e) => setStazioneSel(e.target.value)}
+            >
+              <option value="">— Seleziona —</option>
+              {stazioni.map((s) => (
+                <option key={s.id_stazione} value={s.id_stazione}>
+                  {s.nome}
+                </option>
+              ))}
+            </select>
+            {stazioneSel && (
+              <button type="button" className="btn-secondary admin-mt" onClick={mettiOnlineTutte}>
+                Imposta tutte online (standby)
+              </button>
+            )}
+            <h2 className="section-title admin-mt">
+              {formColonnina.id_punto ? 'Modifica' : 'Nuova'} colonnina
+            </h2>
+            <form className="auth-form" onSubmit={salvaColonnina}>
+              <label>
+                Identificativo
+                <input
+                  required
+                  value={formColonnina.identificativo}
+                  onChange={(e) =>
+                    setFormColonnina({ ...formColonnina, identificativo: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Tipo veicolo
+                <select
+                  value={formColonnina.tipo_veicolo}
+                  onChange={(e) =>
+                    setFormColonnina({ ...formColonnina, tipo_veicolo: e.target.value })
+                  }
+                >
+                  <option value="auto">auto</option>
+                  <option value="bici">bici</option>
+                  <option value="monopattino">monopattino</option>
+                </select>
+              </label>
+              <label>
+                Stato hardware
+                <select
+                  value={formColonnina.stato_hardware}
+                  onChange={(e) =>
+                    setFormColonnina({ ...formColonnina, stato_hardware: e.target.value })
+                  }
+                >
+                  <option value="online">online (standby)</option>
+                  <option value="offline">offline</option>
+                  <option value="guasto">guasto</option>
+                  <option value="manutenzione_programmata">manutenzione</option>
+                </select>
+              </label>
+              <button type="submit" className="btn-primary" disabled={!stazioneSel}>
+                Salva colonnina
+              </button>
+            </form>
+          </div>
+          <div className="card">
+            <h2 className="section-title">Colonnine della stazione</h2>
+            {!stazioneSel && <p>Seleziona una stazione.</p>}
+            <ul className="admin-list">
+              {colonnine.map((c) => (
+                <li key={c.id_punto} className="admin-list__item">
+                  <div>
+                    <strong>{c.identificativo}</strong>
+                    <span className={`stato-badge stato-badge--${c.stato}`}> {c.stato}</span>
+                    <br />
+                    <small>
+                      {c.tipo_veicolo} · {c.stato_hardware}
+                      {c.sessione_aperta ? ' · sessione attiva' : ''}
+                    </small>
+                  </div>
+                  <div className="admin-list__actions">
+                    <button type="button" className="btn-secondary" onClick={() => modificaColonnina(c)}>
+                      Modifica
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-danger"
+                      disabled={c.sessione_aperta}
+                      onClick={() => eliminaColonnina(c.id_punto)}
+                    >
+                      Elimina
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {tab === 'report' && (
+        <div className="admin-report">
+          <div className="card admin-report__filtri">
+            <h2 className="section-title">Filtri report</h2>
+            <div className="admin-report__filtri-row">
+              <label>
+                Data
+                <input
+                  type="date"
+                  className="admin-select"
+                  value={reportData}
+                  onChange={(e) => setReportData(e.target.value)}
+                />
+              </label>
+              <label>
+                Stazione
+                <select
+                  className="admin-select"
+                  value={reportStazione}
+                  onChange={(e) => setReportStazione(e.target.value)}
+                >
+                  <option value="">Tutte le stazioni</option>
+                  {stazioni.map((s) => (
+                    <option key={s.id_stazione} value={s.id_stazione}>
+                      {s.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={caricaReport}
+                disabled={reportLoading}
+              >
+                Aggiorna
+              </button>
+            </div>
+          </div>
+
+          {reportLoading && <p>Caricamento report...</p>}
+
+          {!reportLoading && reportPayload && (
+            <>
+              <p className="page-subtitle">
+                Report del {formattaData(reportPayload.data)} ·{' '}
+                {reportPayload.totali_per_stazione?.length ?? 0} stazioni con attività
+              </p>
+
+              {(reportPayload.totali_per_stazione ?? []).map((tot) => {
+                const dettaglio = (reportPayload.righe ?? []).filter(
+                  (r) => r.id_stazione === tot.id_stazione
+                );
+                return (
+                  <div key={tot.id_stazione} className="card admin-report__stazione">
+                    <h2 className="section-title">{tot.nome_stazione}</h2>
+                    <div className="admin-report__totali">
+                      <span>
+                        <strong>{tot.numero_ricariche}</strong> ricariche
+                      </span>
+                      <span>
+                        <strong>{tot.totale_kwh}</strong> kWh
+                      </span>
+                      <span>
+                        <strong>€ {Number(tot.incasso_standard).toFixed(2)}</strong> incasso
+                      </span>
+                      <span>
+                        <strong>{tot.kwh_gratuiti}</strong> kWh gratuiti
+                      </span>
+                    </div>
+                    {dettaglio.length > 0 ? (
+                      <div className="table-wrap admin-mt">
+                        <table className="data-table data-table--storico">
+                          <thead>
+                            <tr>
+                              <th>Tipo veicolo</th>
+                              <th>Ricariche</th>
+                              <th>kWh</th>
+                              <th>Incasso</th>
+                              <th>kWh gratuiti</th>
+                              <th>Durata media</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dettaglio.map((r) => (
+                              <tr
+                                key={`${r.id_stazione}-${r.tipo_veicolo}`}
+                              >
+                                <td>{r.tipo_veicolo}</td>
+                                <td>{r.numero_ricariche}</td>
+                                <td>{r.totale_kwh}</td>
+                                <td>€ {Number(r.incasso_standard).toFixed(2)}</td>
+                                <td>{r.kwh_gratuiti}</td>
+                                <td>{r.durata_media_minuti} min</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="page-subtitle">Nessun dettaglio per tipo veicolo.</p>
+                    )}
+                  </div>
+                );
+              })}
+
+              {(reportPayload.stazioni_senza_attivita ?? []).length > 0 && (
+                <div className="card admin-report__vuote">
+                  <h2 className="section-title">Stazioni senza ricariche nel giorno</h2>
+                  <ul className="admin-list">
+                    {reportPayload.stazioni_senza_attivita.map((s) => (
+                      <li key={s.id_stazione} className="admin-list__item">
+                        <span>{s.nome_stazione}</span>
+                        <span className="stato-badge stato-badge--default">0 sessioni</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {(reportPayload.totali_per_stazione ?? []).length === 0 &&
+                (reportPayload.stazioni_senza_attivita ?? []).length === 0 && (
+                  <div className="card">
+                    <p>Nessun dato per la data selezionata.</p>
+                  </div>
+                )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Mappa() {
+  const { utente, isAdmin } = useAuth();
+  const accumulatoriStepRef = useRef(null);
   const [stazioni, setStazioni] = useState([]);
   const [accumulatori, setAccumulatori] = useState([]);
   const [stazioneSelezionataId, setStazioneSelezionataId] = useState(null);
@@ -431,12 +1414,14 @@ function Mappa() {
   const [avvioInCorso, setAvvioInCorso] = useState(false);
   const [terminaInCorso, setTerminaInCorso] = useState(false);
   const [messaggioSessione, setMessaggioSessione] = useState(null);
+  const [riepilogoSessione, setRiepilogoSessione] = useState(null);
   const [erroreAzione, setErroreAzione] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errore, setErrore] = useState(null);
 
   const stazioneSelezionata =
-    stazioni.find((s) => s.id === stazioneSelezionataId) ?? null;
+    stazioni.find((s) => String(s.id) === String(stazioneSelezionataId ?? '')) ??
+    null;
 
   const accumulatoreSelezionato = accumulatori.find(
     (a) => String(a.id_accumulatore) === String(accumulatoreSelezionatoId)
@@ -521,14 +1506,49 @@ function Mappa() {
   }, []);
 
   function selezionaStazione(id) {
-    setStazioneSelezionataId(String(id));
-    setAccumulatoreSelezionatoId(null);
-    setColonninaSelezionataId(null);
-    setColonnine(null);
-    setErroreAzione(null);
-    if (!sessioneAttiva) {
-      setMessaggioSessione(null);
+    const nuova = String(id);
+    const giaSelezionata = nuova === String(stazioneSelezionataId ?? '');
+
+    if (!giaSelezionata) {
+      setStazioneSelezionataId(nuova);
+      setAccumulatoreSelezionatoId(null);
+      setColonninaSelezionataId(null);
+      setColonnine(null);
+      setErroreAzione(null);
+      if (!sessioneAttiva) {
+        setMessaggioSessione(null);
+        setRiepilogoSessione(null);
+      }
     }
+
+    window.requestAnimationFrame(() => {
+      accumulatoriStepRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    });
+  }
+
+  useEffect(() => {
+    if (!stazioneSelezionataId || sessioneAttiva) return;
+    const t = window.setTimeout(() => {
+      accumulatoriStepRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [stazioneSelezionataId, sessioneAttiva]);
+
+  function applicaRiepilogoDaSessione(sess, live, identificativoFallback) {
+    const durata = calcolaDurataSessione(sess, live);
+    setRiepilogoSessione({
+      id_punto: sess?.id_punto,
+      identificativo: sess?.identificativo_colonnina ?? identificativoFallback,
+      quantita_kwh: sess?.quantita_kwh ?? live?.kwh_erogati ?? 0,
+      costo_totale: sess?.costo_totale ?? 0,
+      ...durata,
+    });
   }
 
   function selezionaAccumulatore(id) {
@@ -536,8 +1556,17 @@ function Mappa() {
     setAccumulatoreSelezionatoId(idAcc);
     setColonninaSelezionataId(null);
     setColonnine(null);
+    setRiepilogoSessione(null);
     if (stazioneSelezionataId) {
       caricaColonnine(stazioneSelezionataId, idAcc);
+    }
+  }
+
+  function chiudiRiepilogo() {
+    setRiepilogoSessione(null);
+    setMessaggioSessione(null);
+    if (stazioneSelezionataId && accumulatoreSelezionatoId) {
+      caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
     }
   }
 
@@ -546,19 +1575,51 @@ function Mappa() {
     setErroreAzione(null);
   }
 
+  function messaggioErroreApi(err, fallback) {
+    const data = err.response?.data;
+    if (typeof data === 'string' && data.trim().startsWith('<')) {
+      return 'API PHP non configurata. Esegui API/sync-xampp.ps1 e riavvia il server Node.';
+    }
+    return data?.message || err.message || fallback;
+  }
+
+  function calcolaDurataSessione(sessione, live) {
+    if (sessione?.durata_secondi != null) {
+      const sec = sessione.durata_secondi;
+      return {
+        durata_secondi: sec,
+        durata_minuti: sessione.durata_minuti ?? Math.floor(sec / 60),
+      };
+    }
+    if (live?.durata_secondi != null) {
+      const sec = live.durata_secondi;
+      return { durata_secondi: sec, durata_minuti: Math.floor(sec / 60) };
+    }
+    if (sessione?.data_inizio && sessione?.data_fine) {
+      const sec = Math.max(
+        0,
+        Math.floor((new Date(sessione.data_fine) - new Date(sessione.data_inizio)) / 1000)
+      );
+      return { durata_secondi: sec, durata_minuti: Math.floor(sec / 60) };
+    }
+    return {};
+  }
+
   async function avviaSessione() {
+    if (isAdmin) return;
     if (!colonninaSelezionataId || !accumulatoreSelezionatoId) return;
     setAvvioInCorso(true);
     setErroreAzione(null);
     setMessaggioSessione(null);
+    setRiepilogoSessione(null);
     try {
       const res = await axios.post(`${API_URL}/sessione/avvia`, {
         id_punto: colonninaSelezionataId,
-        id_utente: UTENTE_DEMO_ID,
+        id_utente: utente.id_utente,
         id_accumulatore: accumulatoreSelezionatoId,
         metodo_avvio: 'APP',
       });
-      if (res.data?.status !== 'success') {
+      if (res.status >= 400 || res.data?.status !== 'success') {
         throw new Error(res.data?.message || 'Avvio sessione fallito');
       }
       const d = res.data.data;
@@ -566,6 +1627,7 @@ function Mappa() {
         id_sessione: d.id_sessione,
         id_punto: d.id_punto,
         identificativo: d.identificativo,
+        id_accumulatore: accumulatoreSelezionatoId,
       });
       setMessaggioSessione('Simulatore attivo: ricarica in corso.');
       if (d.accumulatore && stazioneSelezionataId) {
@@ -579,9 +1641,7 @@ function Mappa() {
       }
       await caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
     } catch (err) {
-      setErroreAzione(
-        err.response?.data?.message || err.message || 'Impossibile avviare la sessione'
-      );
+      setErroreAzione(messaggioErroreApi(err, 'Impossibile avviare la sessione'));
     } finally {
       setAvvioInCorso(false);
     }
@@ -594,11 +1654,16 @@ function Mappa() {
     try {
       const res = await axios.post(`${API_URL}/sessione/termina`, {
         id_sessione: sessioneAttiva.id_sessione,
+        id_accumulatore: sessioneAttiva.id_accumulatore ?? accumulatoreSelezionatoId,
       });
-      if (res.data?.status !== 'success') {
+      if (res.status >= 400 || res.data?.status !== 'success') {
         throw new Error(res.data?.message || 'Chiusura sessione fallita');
       }
       const d = res.data.data;
+      const durata = calcolaDurataSessione(
+        d.sessione,
+        d.simulatore?.sessione ?? statoLive
+      );
       if (d.accumulatori_stazione?.length && stazioneSelezionataId) {
         setAccumulatori((prev) => {
           const aggiornati = new Map(
@@ -618,16 +1683,16 @@ function Mappa() {
       setSessioneAttiva(null);
       setStatoLive(null);
       setColonninaSelezionataId(null);
-      setMessaggioSessione(
-        `Sessione conclusa: ${d.sessione?.quantita_kwh ?? 0} kWh · € ${d.sessione?.costo_totale ?? 0}`
+      applicaRiepilogoDaSessione(
+        { ...d.sessione, ...durata },
+        d.simulatore?.sessione ?? statoLive,
+        sessioneAttiva.identificativo
       );
       if (stazioneSelezionataId && accumulatoreSelezionatoId) {
         await caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
       }
     } catch (err) {
-      setErroreAzione(
-        err.response?.data?.message || err.message || 'Impossibile terminare la sessione'
-      );
+      setErroreAzione(messaggioErroreApi(err, 'Impossibile terminare la sessione'));
     } finally {
       setTerminaInCorso(false);
     }
@@ -662,9 +1727,15 @@ function Mappa() {
           );
         }
         if (res.data.data?.sessione?.stato === 'terminata') {
+          const sess = res.data.data.sessione;
+          const idColonnina = sessioneAttiva.identificativo;
+          applicaRiepilogoDaSessione(sess, live, idColonnina);
           setSessioneAttiva(null);
           setStatoLive(null);
-          setMessaggioSessione('Sessione terminata automaticamente.');
+          setColonninaSelezionataId(null);
+          if (stazioneSelezionataId && accumulatoreSelezionatoId) {
+            caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
+          }
         }
       } catch (err) {
         console.warn('poll sessione:', err.message);
@@ -697,141 +1768,231 @@ function Mappa() {
     );
   }
 
-  const centerLat =
-    stazioni.reduce((sum, s) => sum + s.lat, 0) / stazioni.length;
-  const centerLng =
-    stazioni.reduce((sum, s) => sum + s.lng, 0) / stazioni.length;
-
   const totaleAccumulatori = stazioni.reduce(
     (sum, s) => sum + s.numAccumulatori,
     0
   );
 
+  const inSessione = Boolean(sessioneAttiva);
+  const mostraAccumulatori = Boolean(stazioneSelezionata && !inSessione);
+  const mostraColonnine = Boolean(accumulatoreSelezionatoId && !inSessione);
+
+  const centerLat = stazioneSelezionata
+    ? stazioneSelezionata.lat
+    : stazioni.reduce((sum, s) => sum + s.lat, 0) / stazioni.length;
+  const centerLng = stazioneSelezionata
+    ? stazioneSelezionata.lng
+    : stazioni.reduce((sum, s) => sum + s.lng, 0) / stazioni.length;
+  const mapZoom = stazioneSelezionata ? 15 : 14;
+
   return (
-    <div>
+    <div className="mappa-flow">
       <h1 className="page-title">Mappa stazioni</h1>
       <p className="page-subtitle">
-        {stazioni.length} stazioni · {totaleAccumulatori} accumulatori totali
+        {stazioni.length} stazioni · {totaleAccumulatori} accumulatori
+        {isAdmin && ' · modalità consultazione'}
       </p>
 
-      <div className="map-container">
-        <MapContainer
-          center={[centerLat, centerLng]}
-          zoom={14}
-          style={{ height: '100%', width: '100%' }}
-        >
-          <TileLayer
-            attribution="&copy; OpenStreetMap contributors"
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          {stazioni.map((s) => (
-            <Marker key={s.id} position={[s.lat, s.lng]}>
-              <Popup>
-                <strong>{s.nome}</strong>
-                <br />
-                {s.indirizzo}
-                <br />
-                <strong>{testoAccumulatori(s.numAccumulatori)}</strong>
-                <br />
-                <button
-                  type="button"
-                  className="btn-dettaglio-popup"
-                  onClick={() => selezionaStazione(s.id)}
-                >
-                  Vedi dettagli accumulatori
-                </button>
-              </Popup>
-            </Marker>
-          ))}
-        </MapContainer>
-      </div>
-
-      <div className="card">
-        <h2 className="section-title">Elenco stazioni</h2>
-        <p className="page-subtitle elenco-hint">
-          Clicca una stazione per vedere i dettagli sotto.
+      {isAdmin && (
+        <p className="sessione-msg mappa-admin-hint">
+          Account amministratore: puoi esplorare stazioni e colonnine ma non avviare ricariche.
         </p>
-        <ul className="station-list">
-          {stazioni.map((s) => (
-            <li
-              key={s.id}
-              className={
-                s.id === stazioneSelezionataId
-                  ? 'station-item station-item--selected'
-                  : 'station-item'
-              }
-              onClick={() => selezionaStazione(s.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  selezionaStazione(s.id);
-                }
-              }}
-              role="button"
-              tabIndex={0}
-            >
-              <div>
-                <strong>{s.nome}</strong>
-                <br />
-                <small>{s.indirizzo}</small>
-                <br />
-                <small>{testoAccumulatori(s.numAccumulatori)}</small>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
+      )}
 
       {erroreAzione && <p className="mappa-errore">{erroreAzione}</p>}
 
-      <DettaglioAccumulatori
-        stazione={stazioneSelezionata}
-        accumulatori={accumulatori}
-        accumulatoreSelezionatoId={accumulatoreSelezionatoId}
-        onSelezionaAccumulatore={selezionaAccumulatore}
+      <ModalRiepilogo
+        riepilogo={riepilogoSessione}
+        stazioneNome={stazioneSelezionata?.nome}
+        onChiudi={chiudiRiepilogo}
       />
 
-      <PannelloColonnine
-        stazione={stazioneSelezionata}
-        accumulatoreSelezionato={accumulatoreSelezionato}
-        colonnine={colonnine}
-        colonnineLoading={colonnineLoading}
-        colonninaSelezionataId={colonninaSelezionataId}
-        onSelezionaColonnina={selezionaColonnina}
-        onAvviaSessione={avviaSessione}
-        sessioneAttiva={sessioneAttiva}
-        avvioInCorso={avvioInCorso}
-      />
+      {inSessione ? (
+        <PannelloSessione
+          sessioneAttiva={sessioneAttiva}
+          statoLive={statoLive}
+          onTermina={terminaSessione}
+          terminaInCorso={terminaInCorso}
+          messaggio={messaggioSessione}
+        />
+      ) : (
+        <>
+          <TabellaStazioni
+            stazioni={stazioni}
+            stazioneSelezionataId={stazioneSelezionataId}
+            onSeleziona={selezionaStazione}
+            disabilitata={inSessione}
+          />
 
-      <PannelloSessione
-        sessioneAttiva={sessioneAttiva}
-        statoLive={statoLive}
-        onTermina={terminaSessione}
-        terminaInCorso={terminaInCorso}
-        messaggio={messaggioSessione}
-      />
+          <div
+            className={
+              stazioneSelezionata
+                ? 'map-container map-container--compact'
+                : 'map-container'
+            }
+          >
+            <MapContainer
+              center={[centerLat, centerLng]}
+              zoom={mapZoom}
+              style={{ height: '100%', width: '100%' }}
+            >
+              <TileLayer
+                attribution="&copy; OpenStreetMap contributors"
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {stazioneSelezionata && (
+                <CentraMappaSuStazione
+                  lat={stazioneSelezionata.lat}
+                  lng={stazioneSelezionata.lng}
+                  zoom={mapZoom}
+                />
+              )}
+              {stazioni.map((s) => (
+                <Marker
+                  key={s.id}
+                  position={[s.lat, s.lng]}
+                  eventHandlers={{
+                    click: () => selezionaStazione(s.id),
+                  }}
+                >
+                  <Popup>
+                    <strong>{s.nome}</strong>
+                    <br />
+                    {s.indirizzo}
+                    <br />
+                    <button
+                      type="button"
+                      className="btn-dettaglio-popup"
+                      onClick={() => selezionaStazione(s.id)}
+                    >
+                      Seleziona stazione
+                    </button>
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
+          </div>
+
+          <div
+            ref={accumulatoriStepRef}
+            className={
+              mostraAccumulatori
+                ? 'mappa-step mappa-step--attivo'
+                : 'mappa-step mappa-step--inattivo'
+            }
+          >
+            {mostraAccumulatori ? (
+              <ListaAccumulatori
+                stazione={stazioneSelezionata}
+                accumulatori={accumulatori}
+                accumulatoreSelezionatoId={accumulatoreSelezionatoId}
+                onSeleziona={selezionaAccumulatore}
+                compatto={mostraColonnine}
+              />
+            ) : (
+              <div className="card mappa-step__placeholder">
+                <p className="page-subtitle" style={{ margin: 0 }}>
+                  Seleziona una stazione sopra per vedere gli accumulatori disponibili.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {mostraColonnine && (
+            <PannelloColonnine
+              colonnine={colonnine}
+              colonnineLoading={colonnineLoading}
+              colonninaSelezionataId={isAdmin ? null : colonninaSelezionataId}
+              onSelezionaColonnina={selezionaColonnina}
+              onAvviaSessione={avviaSessione}
+              avvioInCorso={avvioInCorso}
+              soloLettura={isAdmin}
+            />
+          )}
+        </>
+      )}
     </div>
+  );
+}
+
+function AppShell() {
+  const { utente, caricamento } = useAuth();
+
+  if (caricamento) {
+    return (
+      <div className="auth-page">
+        <p>Caricamento...</p>
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          utente ? (
+            <Navigate to={utente.is_admin ? '/admin' : '/mappa'} replace />
+          ) : (
+            <PaginaAuth />
+          )
+        }
+      />
+      <Route
+        path="/*"
+        element={
+          utente ? (
+            <div className="app-shell">
+              <Navbar />
+              <main className="app-main">
+                <Routes>
+                  <Route
+                    path="/"
+                    element={
+                      <SoloUtente>
+                        <Dashboard />
+                      </SoloUtente>
+                    }
+                  />
+                  <Route path="/mappa" element={<Mappa />} />
+                  <Route
+                    path="/storico"
+                    element={
+                      <SoloUtente>
+                        <Storico />
+                      </SoloUtente>
+                    }
+                  />
+                  <Route path="/scuola" element={<Navigate to="/" replace />} />
+                  <Route path="/game" element={<Navigate to="/" replace />} />
+                  <Route
+                    path="/admin"
+                    element={
+                      <RequireAdmin>
+                        <Admin />
+                      </RequireAdmin>
+                    }
+                  />
+                  <Route path="*" element={<Navigate to="/mappa" replace />} />
+                </Routes>
+              </main>
+            </div>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+    </Routes>
   );
 }
 
 function App() {
   return (
-    <BrowserRouter>
-      <div className="app-shell">
-        <Navbar />
-        <main className="app-main">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/storico" element={<Storico />} />
-            <Route path="/mappa" element={<Mappa />} />
-            <Route path="/scuola" element={<Scuola />} />
-            <Route path="/game" element={<Gamification />} />
-            <Route path="/admin" element={<Admin />} />
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <AppShell />
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

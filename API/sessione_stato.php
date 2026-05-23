@@ -68,6 +68,9 @@ try {
                 'costo_totale' => (float) $sessione['costo_totale'],
                 'stato' => $sessione['data_fine'] ? 'terminata' : 'in_corso',
                 'identificativo_colonnina' => $sessione['identificativo_fisico'],
+                'durata_secondi' => is_array($live) && isset($live['durata_secondi'])
+                    ? (int) $live['durata_secondi']
+                    : null,
             ],
             'live' => $live,
             'accumulatore' => $acc,

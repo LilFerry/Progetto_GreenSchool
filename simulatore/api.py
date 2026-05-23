@@ -32,8 +32,10 @@ def avvia_simulazione():
     if not id_sessione:
         return _err("Campo id_sessione obbligatorio")
 
+    id_accumulatore = data.get("id_accumulatore")
+
     try:
-        risultato = manager.avvia_simulazione(id_sessione)
+        risultato = manager.avvia_simulazione(id_sessione, id_accumulatore=id_accumulatore)
         return jsonify({"status": "success", "message": "Simulazione avviata", "data": risultato}), 201
     except NotFoundError as e:
         return _err(str(e), 404)

@@ -1,9 +1,5 @@
 <?php
-// =========================================================================
-// API: COLONNINE PER STAZIONE (disponibilità per ricarica)
 // GET ?id_stazione=...&id_accumulatore=... (opzionale)
-// File autonomo (nessuna cartella includes richiesta) — compatibile XAMPP htdocs
-// =========================================================================
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -14,78 +10,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-function colonnine_json_response(array $payload, int $code = 200): void
-{
-    http_response_code($code);
-    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-function colonnine_json_error(string $message, int $code = 400): void
-{
-    colonnine_json_response(['status' => 'error', 'message' => $message], $code);
-}
-
-function colonnine_tipi_veicolo_per_accumulatore(string $nome): array
-{
-    $nome = mb_strtolower($nome);
-    if (strpos($nome, 'auto') !== false) {
-        return ['auto'];
-    }
-    if (strpos($nome, 'bici') !== false || strpos($nome, 'monopatt') !== false) {
-        return ['bici', 'monopattino'];
-    }
-    return ['auto', 'bici', 'monopattino'];
-}
+require_once __DIR__ . '/includes/db.php';
+require_once __DIR__ . '/includes/sessione_helpers.php';
+require_once __DIR__ . '/includes/colonnina_helpers.php';
 
 $idStazione = trim((string) ($_GET['id_stazione'] ?? ''));
 $idAccumulatore = trim((string) ($_GET['id_accumulatore'] ?? ''));
 
 if ($idStazione === '') {
-    colonnine_json_error('Parametro id_stazione obbligatorio', 400);
+    json_error('Parametro id_stazione obbligatorio', 400);
 }
 
 try {
-    $pdo = new PDO(
-        'mysql:host=127.0.0.1;dbname=stazione_ricarica;charset=utf8mb4',
-        'root',
-        '',
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        ]
-    );
-
-    $tipiFiltro = null;
+    $pdo = db_connect();
 
     if ($idAccumulatore !== '') {
         $stmt = $pdo->prepare(
-            'SELECT id_accumulatore, id_stazione, nome FROM accumulatori_stazione WHERE id_accumulatore = :id'
+            'SELECT id_accumulatore, id_stazione FROM accumulatori_stazione WHERE id_accumulatore = :id'
         );
         $stmt->execute(['id' => $idAccumulatore]);
         $acc = $stmt->fetch();
         if (!$acc || $acc['id_stazione'] !== $idStazione) {
-            colonnine_json_error('Accumulatore non appartiene a questa stazione', 404);
+            json_error('Accumulatore non appartiene a questa stazione', 404);
         }
-        $tipiFiltro = colonnine_tipi_veicolo_per_accumulatore($acc['nome']);
     }
 
-    $stmt = $pdo->prepare('SELECT * FROM vw_stato_colonnine WHERE id_stazione = :stazione');
-    $stmt->execute(['stazione' => $idStazione]);
+    $sqlPunti = "
+        SELECT p.id_punto, p.identificativo_fisico, p.tipo_veicolo, p.tipo_connettore,
+               p.potenza_max_kw, p.tariffa_predefinita, p.stato_hardware,
+               s.id_sessione, s.data_inizio AS occupata_da,
+               TIMESTAMPDIFF(MINUTE, s.data_inizio, NOW()) AS minuti_trascorsi
+        FROM punti_ricarica p
+        LEFT JOIN sessioni_ricarica s ON s.id_punto = p.id_punto AND s.data_fine IS NULL
+        WHERE p.id_stazione = :stazione";
+    $paramsPunti = ['stazione' => $idStazione];
+    if ($idAccumulatore !== '') {
+        $sqlPunti .= ' AND p.id_accumulatore = :acc';
+        $paramsPunti['acc'] = $idAccumulatore;
+    }
+    $sqlPunti .= ' ORDER BY p.identificativo_fisico';
+
+    $stmt = $pdo->prepare($sqlPunti);
+    $stmt->execute($paramsPunti);
     $rows = $stmt->fetchAll();
 
-    // La vista unisce tutti gli accumulatori della stazione → una riga per accumulatore.
-    // Teniamo una sola riga per id_punto (stato sessione identico su tutte le righe).
     $colonnine = [];
-    $visti = [];
     foreach ($rows as $c) {
-        if (isset($visti[$c['id_punto']])) {
-            continue;
-        }
-        if ($tipiFiltro !== null && !in_array($c['tipo_veicolo'], $tipiFiltro, true)) {
-            continue;
-        }
-        $visti[$c['id_punto']] = true;
+        $sessioneAperta = $c['id_sessione'] !== null;
+        $stato = stato_colonnina_calcolato($c['stato_hardware'], $sessioneAperta);
 
         $item = [
             'id_punto' => $c['id_punto'],
@@ -94,15 +66,13 @@ try {
             'tipo_connettore' => $c['tipo_connettore'],
             'potenza_max_kw' => $c['potenza_max_kw'] !== null ? (float) $c['potenza_max_kw'] : null,
             'tariffa_kwh' => $c['tariffa_predefinita'] !== null ? (float) $c['tariffa_predefinita'] : null,
-            'stato' => $c['stato_calcolato'],
-            'utilizzabile' => !in_array($c['stato_calcolato'], ['occupata', 'fuori_servizio'], true),
-            'batteria_stazione' => [
-                'percentuale' => $c['batteria_stazione_perc'] !== null ? (float) $c['batteria_stazione_perc'] : null,
-                'kwh' => $c['batteria_stazione_kwh'] !== null ? (float) $c['batteria_stazione_kwh'] : null,
-            ],
+            'stato_hardware' => $c['stato_hardware'],
+            'stato' => $stato,
+            'utilizzabile' => colonnina_utilizzabile($stato),
+            'batteria_stazione' => [],
         ];
 
-        if ($c['stato_calcolato'] === 'occupata') {
+        if ($stato === 'occupata') {
             $item['sessione_attiva'] = [
                 'id_sessione' => $c['id_sessione'],
                 'occupata_da' => $c['occupata_da'],
@@ -127,14 +97,13 @@ try {
         }
     }
 
-    colonnine_json_response([
+    json_response([
         'status' => 'success',
         'id_stazione' => $idStazione,
         'id_accumulatore' => $idAccumulatore !== '' ? $idAccumulatore : null,
         'riepilogo' => $riepilogo,
         'colonnine' => $colonnine,
     ]);
-
 } catch (Throwable $e) {
-    colonnine_json_error('Errore recupero colonnine: ' . $e->getMessage(), 500);
+    json_error('Errore recupero colonnine: ' . $e->getMessage(), 500);
 }

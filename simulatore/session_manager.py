@@ -36,7 +36,9 @@ class SessionManager:
             if sim:
                 self._punti_occupati.pop(sim.stato.id_punto, None)
 
-    def avvia_simulazione(self, id_sessione: str) -> dict[str, Any]:
+    def avvia_simulazione(
+        self, id_sessione: str, id_accumulatore: Optional[str] = None
+    ) -> dict[str, Any]:
         """Avvia il thread di simulazione per una sessione già creata da PHP."""
         with self._lock:
             if id_sessione in self._simulatori:
@@ -68,7 +70,21 @@ class SessionManager:
                     {"id_sessione_attiva": self._punti_occupati[id_punto]},
                 )
 
-            acc = seleziona_accumulatore(cur, sess["id_stazione"], sess["tipo_veicolo"])
+            if id_accumulatore:
+                acc = fetch_one(
+                    cur,
+                    """
+                    SELECT id_accumulatore, id_stazione, potenza_max_scarica_kw,
+                           livello_corrente_kwh, capacita_utilizzabile_kwh
+                    FROM accumulatori_stazione
+                    WHERE id_accumulatore = %s AND id_stazione = %s
+                    """,
+                    (id_accumulatore, sess["id_stazione"]),
+                )
+                if not acc:
+                    raise ConflictError("Accumulatore non valido per questa stazione")
+            else:
+                acc = seleziona_accumulatore(cur, sess["id_stazione"], sess["tipo_veicolo"])
             if not acc:
                 raise ConflictError("Nessun accumulatore per la stazione")
 
