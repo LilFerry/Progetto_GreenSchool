@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const stations = [
   {
@@ -87,7 +86,7 @@ for (const st of stations) {
         : `Accumulatore ${unit.label} - ${st.abbrev}`;
 
     accIns.push(
-      `('${accId}','${st.id}','${nomeAcc}',80.00,72.00,50.00,40.00,60.00,83.33,'standby','${now}',15.00,95.00)`
+      `('${accId}','${st.id}','${nomeAcc}',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','${now}',15.00,95.00)`
     );
 
     const tariffs = {
@@ -114,28 +113,10 @@ for (const st of stations) {
   }
 }
 
-let guestHash = '';
-const phpBins = ['C:\\xampp\\php\\php.exe', 'php'];
-for (const bin of phpBins) {
-  try {
-    guestHash = execSync(
-      `"${bin}" -r "echo password_hash('guest123', PASSWORD_DEFAULT);"`,
-      { encoding: 'utf8' }
-    ).trim();
-    if (guestHash.startsWith('$2y$')) break;
-  } catch {
-    /* prova prossimo */
-  }
-}
-if (!guestHash) {
-  guestHash = '$2y$10$WlNiKzR31Pyd13SVp5Ex0.WaDkSD3aEd0JEmylGMBieuIriOXxLaa';
-}
-
 const out = path.join(__dirname, '..', '_seed_fragments.sql');
 fs.writeFileSync(
   out,
-  `-- generated: ${accIns.length} accumulatori, ${puntiIns.length} punti (no tariffe_orarie)\n` +
-    `GUEST_HASH:${guestHash}\n\n` +
+  `-- generated: ${accIns.length} accumulatori, ${puntiIns.length} punti (no tariffe_orarie)\n\n` +
     `INSERT accumulatori:\n${accIns.join(',\n')};\n\n` +
     `INSERT punti:\n${puntiIns.join(',\n')};\n`
 );

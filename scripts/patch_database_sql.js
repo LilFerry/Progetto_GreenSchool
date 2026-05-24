@@ -15,9 +15,6 @@ function extractBlock(label) {
   return m[1].trim();
 }
 
-const hashMatch = frag.match(/GUEST_HASH:(.+)\n/);
-const guestHash = hashMatch ? hashMatch[1].trim() : '';
-
 const accValues = extractBlock('accumulatori');
 const puntiValues = extractBlock('punti');
 
@@ -79,18 +76,11 @@ db = db.replace(
   '-- Nessuna tariffa oraria: si usa solo tariffa_predefinita su punti_ricarica'
 );
 
-db = db.replace(
-  /INSERT INTO `badge_utente` VALUES [\s\S]*?;/,
-  `INSERT INTO \`badge_utente\` VALUES (1,'c2000000-0000-0000-0000-000000000010','RFID-GUEST-0001','Badge Ospite','2026-05-23 10:00:00',0);`
-);
-
-const guestSql = guestHash
-  ? `('c2000000-0000-0000-0000-000000000010','guest@stazionericarica.it','${guestHash}',NULL,NULL,NULL,'2026-05-23 10:00:00','ospite',1)`
-  : `('c2000000-0000-0000-0000-000000000010','guest@stazionericarica.it',NULL,NULL,NULL,NULL,'2026-05-23 10:00:00','ospite',1)`;
+db = db.replace(/INSERT INTO `badge_utente` VALUES [\s\S]*?;\n/, '');
 
 db = db.replace(
   /INSERT INTO `utenti` VALUES [\s\S]*?;/,
-  `INSERT INTO \`utenti\` VALUES ('a1000000-0000-0000-0000-000000000001','admin@stazionericarica.it',NULL,'+39 333 1000001','Marco','Amministratori','2026-01-01 07:00:00','completo',1),${guestSql};`
+  `INSERT INTO \`utenti\` VALUES ('a1000000-0000-0000-0000-000000000001','admin@stazionericarica.it',NULL,'+39 02 1234567','Paolo','Marchesini','2026-01-15 09:00:00','completo',1);`
 );
 
 db = db.replace(
@@ -98,18 +88,21 @@ db = db.replace(
   `AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;\n/*!40101 SET character_set_client = @saved_cs_client */;\n\n--\n-- Dumping data for table \`tariffe_orarie\``
 );
 
-const header = `-- Seed: 10 accumulatori (auto separati da bici/monopattino), punti variabili per tipo.
--- Tariffa solo in punti_ricarica.tariffa_predefinita (tabella tariffe_orarie vuota).
--- Admin senza badge; guest guest@stazionericarica.it / guest123; sessioni e storico batteria vuoti.
+const header = `-- Installazione pulita GreenSchool: importare solo questo file.
+-- Admin: admin@stazionericarica.it / admin123 (password_hash NULL, fallback in PHP).
+-- Accumulatori: stato attivo se percentuale_carica > soglia_minima_perc, altrimenti offline.
+-- Gamification: tabelle utente_gamification e missioni_giornaliere_progresso incluse (vuote).
+-- Vuoti: sessioni_ricarica, storico_livello_batteria, badge_utente, gamification.
+-- Seed: 10 accumulatori, punti di ricarica; tariffe solo in punti_ricarica.tariffa_predefinita.
 
 `;
 
 db = db.replace(
-  /-- Seed:[\s\S]*?-- Sessioni e storico_livello_batteria vuoti\.\n\n/,
+  /-- Installazione pulita[\s\S]*?-- Seed: 10 accumulatori[\s\S]*?\n\n/,
   header
 );
-if (!db.includes('guest guest@stazionericarica.it')) {
-  db = db.replace(/USE `stazione_ricarica`;\n/, `USE \`stazione_ricarica\`;\n${header}`);
+if (!db.includes('admin@stazionericarica.it / admin123')) {
+  db = db.replace(/USE `stazione_ricarica`;\n/, `USE \`stazione_ricarica\`;\n\n${header}`);
 }
 
 fs.writeFileSync(dbPath, db);

@@ -7,6 +7,7 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { AuthProvider, useAuth } from './AuthContext';
+import { SessionProvider, useSession } from './SessionContext';
 import './App.css';
 
 const API_URL = 'http://localhost:3001/api';
@@ -102,14 +103,28 @@ function classeStato(stato) {
   return 'stato-badge--default';
 }
 
+function statoAccumulatoreVisibile(acc) {
+  const stato = String(acc.stato_operativo ?? '').toLowerCase();
+  if (['guasto', 'manutenzione', 'scarica', 'carica'].includes(stato)) {
+    return stato;
+  }
+  const perc = Number(acc.percentuale_carica) || 0;
+  const soglia = Number(acc.soglia_minima_perc) ?? 0;
+  return perc > soglia ? 'attivo' : 'offline';
+}
+
 function testoDisponibilitaAcc(acc) {
   const livello = Number(acc.livello_corrente_kwh) || 0;
-  const stato = String(acc.stato_operativo ?? '').toLowerCase();
+  const stato = statoAccumulatoreVisibile(acc);
+  const soglia = Number(acc.soglia_minima_perc) ?? 0;
   if (stato === 'guasto' || stato === 'manutenzione') {
     return { ok: false, testo: 'Non disponibile (manutenzione/guasto)' };
   }
-  if (livello <= 0.01) {
-    return { ok: false, testo: 'Non disponibile (scarico)' };
+  if (stato === 'offline' || livello <= 0.01) {
+    return {
+      ok: false,
+      testo: `Non disponibile (sotto soglia minima ${soglia}%)`,
+    };
   }
   if (stato === 'scarica') {
     return { ok: true, testo: 'In erogazione — energia disponibile' };
@@ -210,6 +225,7 @@ function ListaAccumulatori({
             <tbody>
               <tr>
                 {lista.map((acc) => {
+                  const statoVis = statoAccumulatoreVisibile(acc);
                   const disp = testoDisponibilitaAcc(acc);
                   const perc = Math.min(100, Math.max(0, Number(acc.percentuale_carica) || 0));
                   const selezionato =
@@ -226,8 +242,8 @@ function ListaAccumulatori({
                         onClick={() => onSeleziona(acc.id_accumulatore)}
                       >
                         <strong>{acc.nome ?? 'Accumulatore'}</strong>
-                        <span className={`stato-badge ${classeStato(acc.stato_operativo)}`}>
-                          {acc.stato_operativo}
+                        <span className={`stato-badge ${classeStato(statoVis)}`}>
+                          {statoVis}
                         </span>
                         <div className="xp-bar xp-bar--compact">
                           <div className="xp-bar__fill" style={{ width: `${perc}%` }} />
@@ -562,21 +578,60 @@ function PannelloSessione({
   onTermina,
   terminaInCorso,
   messaggio,
+  compatto = false,
 }) {
+  const [durataSecondi, setDurataSecondi] = useState(null);
+
+  useEffect(() => {
+    if (!sessioneAttiva?.id_sessione) {
+      setDurataSecondi(null);
+      return undefined;
+    }
+
+    const inizioMs = sessioneAttiva.data_inizio
+      ? new Date(sessioneAttiva.data_inizio).getTime()
+      : sessioneAttiva.avviataIl ?? Date.now();
+
+    function aggiornaDurata() {
+      setDurataSecondi(Math.max(0, Math.floor((Date.now() - inizioMs) / 1000)));
+    }
+
+    aggiornaDurata();
+    const timer = setInterval(aggiornaDurata, 1000);
+    return () => clearInterval(timer);
+  }, [
+    sessioneAttiva?.id_sessione,
+    sessioneAttiva?.data_inizio,
+    sessioneAttiva?.avviataIl,
+  ]);
+
   if (!sessioneAttiva) return null;
 
   const kwh =
     statoLive?.kwh_erogati ??
     sessioneAttiva.quantita_kwh ??
     0;
-  const durata = statoLive?.durata_secondi;
 
   return (
-    <div className="card card--sessione card--sessione-focus">
-      <h2 className="section-title">Sessione di ricarica in corso</h2>
+    <div
+      className={
+        compatto
+          ? 'card card--sessione card--sessione-compact'
+          : 'card card--sessione card--sessione-focus'
+      }
+    >
+      <h2 className="section-title">
+        {compatto ? 'Ricarica in corso' : 'Sessione di ricarica in corso'}
+      </h2>
       {messaggio && <p className="sessione-msg">{messaggio}</p>}
       <table className="data-table">
         <tbody>
+          {sessioneAttiva.nome_stazione && (
+            <tr>
+              <th>Stazione</th>
+              <td>{sessioneAttiva.nome_stazione}</td>
+            </tr>
+          )}
           <tr>
             <th>Colonnina</th>
             <td>{sessioneAttiva.identificativo ?? sessioneAttiva.id_punto}</td>
@@ -591,10 +646,12 @@ function PannelloSessione({
               <strong>{Number(kwh).toFixed(3)}</strong> kWh
             </td>
           </tr>
-          {durata != null && (
+          {durataSecondi != null && (
             <tr>
               <th>Durata</th>
-              <td>{Math.floor(durata / 60)} min {durata % 60} s</td>
+              <td>
+                {Math.floor(durataSecondi / 60)} min {durataSecondi % 60} s
+              </td>
             </tr>
           )}
         </tbody>
@@ -746,9 +803,6 @@ function PaginaAuth() {
                 onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
               />
             </label>
-            <p className="auth-hint">
-              Admin: <code>admin@stazionericarica.it</code> / <code>admin123</code>
-            </p>
             <button type="submit" className="btn-primary" disabled={invio}>
               {invio ? 'Accesso...' : 'Entra'}
             </button>
@@ -838,8 +892,68 @@ function PlaceholderPagina({ titolo }) {
   );
 }
 
+function SessionModals() {
+  const {
+    xpReward,
+    chiudiXpMostraRiepilogo,
+    riepilogoSessione,
+    stazioneRiepilogo,
+    chiudiRiepilogo,
+  } = useSession();
+
+  return (
+    <>
+      <ModalGuadagnoXp reward={xpReward} onContinua={chiudiXpMostraRiepilogo} />
+      <ModalRiepilogo
+        riepilogo={xpReward ? null : riepilogoSessione}
+        stazioneNome={stazioneRiepilogo}
+        onChiudi={chiudiRiepilogo}
+      />
+    </>
+  );
+}
+
+function ListaRicaricheInCorso() {
+  const {
+    sessioniAttive,
+    statoLiveMap,
+    terminaSessione,
+    terminaInCorsoId,
+    erroreSessione,
+  } = useSession();
+
+  if (!sessioniAttive.length) return null;
+
+  return (
+    <div className="card card--sessioni-attive">
+      <h2 className="section-title">Ricariche in corso</h2>
+      <p className="page-subtitle sessioni-attive-hint">
+        Puoi avviare altre ricariche sulla mappa, su colonnine libere. Energia aggiornata ogni 5
+        secondi.
+      </p>
+      {erroreSessione && <p className="mappa-errore">{erroreSessione}</p>}
+      <div className="sessioni-attive-list">
+        {sessioniAttive.map((s) => (
+          <PannelloSessione
+            key={s.id_sessione}
+            compatto
+            sessioneAttiva={s}
+            statoLive={statoLiveMap[s.id_sessione]}
+            onTermina={() => terminaSessione(s.id_sessione, s.id_accumulatore)}
+            terminaInCorso={terminaInCorsoId === s.id_sessione}
+          />
+        ))}
+      </div>
+      <Link to="/mappa" className="btn-secondary btn-secondary--inline">
+        Avvia un&apos;altra ricarica sulla mappa →
+      </Link>
+    </div>
+  );
+}
+
 function Dashboard() {
   const { utente } = useAuth();
+  const { haSessioniAttive } = useSession();
   const [profilo, setProfilo] = useState(null);
   const [missioni, setMissioni] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -888,7 +1002,7 @@ function Dashboard() {
           <br />
           <small>
             Se il database è già attivo, esegui{' '}
-            <code>database/gamification_migration.sql</code> e sincronizza le API PHP.
+            <code>database.sql</code> e sincronizza le API PHP.
           </small>
         </p>
       )}
@@ -913,15 +1027,19 @@ function Dashboard() {
             </Link>
           </div>
           <ListaMissioniGiornaliere missioni={missioni} />
-          <div className="card">
-            <h2 className="section-title">Prossimo passo</h2>
-            <p className="page-subtitle" style={{ marginTop: 0 }}>
-              Avvia una ricarica dalla mappa per guadagnare XP e avanzare nelle missioni di oggi.
-            </p>
-            <Link to="/mappa" className="btn-primary">
-              Vai alla mappa
-            </Link>
-          </div>
+          {haSessioniAttive ? (
+            <ListaRicaricheInCorso />
+          ) : (
+            <div className="card">
+              <h2 className="section-title">Prossimo passo</h2>
+              <p className="page-subtitle" style={{ marginTop: 0 }}>
+                Avvia una ricarica dalla mappa per guadagnare XP e avanzare nelle missioni di oggi.
+              </p>
+              <Link to="/mappa" className="btn-primary">
+                Vai alla mappa
+              </Link>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -1526,7 +1644,7 @@ function Admin() {
             </select>
             {stazioneSel && (
               <button type="button" className="btn-secondary admin-mt" onClick={mettiOnlineTutte}>
-                Imposta tutte online (standby)
+                Imposta tutte online (attivo)
               </button>
             )}
             <h2 className="section-title admin-mt">
@@ -1564,7 +1682,7 @@ function Admin() {
                     setFormColonnina({ ...formColonnina, stato_hardware: e.target.value })
                   }
                 >
-                  <option value="online">online (standby)</option>
+                  <option value="online">online (attivo)</option>
                   <option value="offline">offline</option>
                   <option value="guasto">guasto</option>
                   <option value="manutenzione_programmata">manutenzione</option>
@@ -1746,6 +1864,13 @@ function Admin() {
 
 function Mappa() {
   const { utente, isAdmin } = useAuth();
+  const {
+    sessioniAttive,
+    registraSessioneAvviata,
+    haSessioniAttive,
+    erroreSessione,
+    setErroreSessione,
+  } = useSession();
   const accumulatoriStepRef = useRef(null);
   const [stazioni, setStazioni] = useState([]);
   const [accumulatori, setAccumulatori] = useState([]);
@@ -1754,13 +1879,8 @@ function Mappa() {
   const [colonnine, setColonnine] = useState(null);
   const [colonnineLoading, setColonnineLoading] = useState(false);
   const [colonninaSelezionataId, setColonninaSelezionataId] = useState(null);
-  const [sessioneAttiva, setSessioneAttiva] = useState(null);
-  const [statoLive, setStatoLive] = useState(null);
   const [avvioInCorso, setAvvioInCorso] = useState(false);
-  const [terminaInCorso, setTerminaInCorso] = useState(false);
   const [messaggioSessione, setMessaggioSessione] = useState(null);
-  const [riepilogoSessione, setRiepilogoSessione] = useState(null);
-  const [xpReward, setXpReward] = useState(null);
   const [erroreAzione, setErroreAzione] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errore, setErrore] = useState(null);
@@ -1803,8 +1923,6 @@ function Mappa() {
         setStazioneSelezionataId(null);
         setAccumulatoreSelezionatoId(null);
         setColonninaSelezionataId(null);
-        setSessioneAttiva(null);
-        setStatoLive(null);
 
         const [resStazioni, resAccumulatori] = await Promise.all([
           axios.get(`${API_URL}/stazioniVicine`),
@@ -1885,10 +2003,7 @@ function Mappa() {
       setColonninaSelezionataId(null);
       setColonnine(null);
       setErroreAzione(null);
-      if (!sessioneAttiva) {
-        setMessaggioSessione(null);
-        setRiepilogoSessione(null);
-      }
+      setMessaggioSessione(null);
     }
 
     window.requestAnimationFrame(() => {
@@ -1900,7 +2015,7 @@ function Mappa() {
   }
 
   useEffect(() => {
-    if (!stazioneSelezionataId || sessioneAttiva) return;
+    if (!stazioneSelezionataId) return undefined;
     const t = window.setTimeout(() => {
       accumulatoriStepRef.current?.scrollIntoView({
         behavior: 'smooth',
@@ -1908,47 +2023,15 @@ function Mappa() {
       });
     }, 120);
     return () => window.clearTimeout(t);
-  }, [stazioneSelezionataId, sessioneAttiva]);
-
-  function applicaRiepilogoDaSessione(sess, live, identificativoFallback) {
-    const durata = calcolaDurataSessione(sess, live);
-    setRiepilogoSessione({
-      id_punto: sess?.id_punto,
-      identificativo: sess?.identificativo_colonnina ?? identificativoFallback,
-      quantita_kwh: sess?.quantita_kwh ?? live?.kwh_erogati ?? 0,
-      costo_totale: sess?.costo_totale ?? 0,
-      ...durata,
-    });
-  }
+  }, [stazioneSelezionataId]);
 
   function selezionaAccumulatore(id) {
     const idAcc = String(id);
     setAccumulatoreSelezionatoId(idAcc);
     setColonninaSelezionataId(null);
     setColonnine(null);
-    setRiepilogoSessione(null);
     if (stazioneSelezionataId) {
       caricaColonnine(stazioneSelezionataId, idAcc);
-    }
-  }
-
-  function chiudiRiepilogo() {
-    setRiepilogoSessione(null);
-    setXpReward(null);
-    setMessaggioSessione(null);
-    if (stazioneSelezionataId && accumulatoreSelezionatoId) {
-      caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
-    }
-  }
-
-  function chiudiXpMostraRiepilogo() {
-    setXpReward(null);
-  }
-
-  function applicaGamificationDaRisposta(gamification) {
-    if (isAdmin || !gamification || gamification.errore) return;
-    if ((gamification.xp_guadagnati ?? 0) > 0) {
-      setXpReward(gamification);
     }
   }
 
@@ -1958,28 +2041,6 @@ function Mappa() {
       return 'API PHP non configurata. Esegui API/sync-xampp.ps1 e riavvia il server Node.';
     }
     return data?.message || err.message || fallback;
-  }
-
-  function calcolaDurataSessione(sessione, live) {
-    if (sessione?.durata_secondi != null) {
-      const sec = sessione.durata_secondi;
-      return {
-        durata_secondi: sec,
-        durata_minuti: sessione.durata_minuti ?? Math.floor(sec / 60),
-      };
-    }
-    if (live?.durata_secondi != null) {
-      const sec = live.durata_secondi;
-      return { durata_secondi: sec, durata_minuti: Math.floor(sec / 60) };
-    }
-    if (sessione?.data_inizio && sessione?.data_fine) {
-      const sec = Math.max(
-        0,
-        Math.floor((new Date(sessione.data_fine) - new Date(sessione.data_inizio)) / 1000)
-      );
-      return { durata_secondi: sec, durata_minuti: Math.floor(sec / 60) };
-    }
-    return {};
   }
 
   function selezionaColonnina(idPunto) {
@@ -1992,7 +2053,7 @@ function Mappa() {
     setAvvioInCorso(true);
     setErroreAzione(null);
     setMessaggioSessione(null);
-    setRiepilogoSessione(null);
+    setErroreSessione(null);
     try {
       const res = await axios.post(`${API_URL}/sessione/avvia`, {
         id_punto: colonninaSelezionataId,
@@ -2004,14 +2065,15 @@ function Mappa() {
         throw new Error(res.data?.message || 'Avvio sessione fallito');
       }
       const d = res.data.data;
-      setSessioneAttiva({
-        id_sessione: d.id_sessione,
-        id_punto: d.id_punto,
-        identificativo: d.identificativo,
+      registraSessioneAvviata(d, {
         id_accumulatore: accumulatoreSelezionatoId,
+        nome_stazione: stazioneSelezionata?.nome ?? null,
       });
-      setMessaggioSessione('Simulatore attivo: ricarica in corso.');
-      if (d.accumulatore && stazioneSelezionataId) {
+      setColonninaSelezionataId(null);
+      setMessaggioSessione(
+        'Ricarica avviata. Puoi continuare sulla mappa o gestirla dalla Dashboard.'
+      );
+      if (d.accumulatore) {
         setAccumulatori((prev) =>
           prev.map((a) =>
             String(a.id_accumulatore) === String(d.accumulatore.id_accumulatore)
@@ -2027,109 +2089,6 @@ function Mappa() {
       setAvvioInCorso(false);
     }
   }
-
-  async function terminaSessione() {
-    if (!sessioneAttiva?.id_sessione) return;
-    setTerminaInCorso(true);
-    setErroreAzione(null);
-    try {
-      const res = await axios.post(`${API_URL}/sessione/termina`, {
-        id_sessione: sessioneAttiva.id_sessione,
-        id_accumulatore: sessioneAttiva.id_accumulatore ?? accumulatoreSelezionatoId,
-      });
-      if (res.status >= 400 || res.data?.status !== 'success') {
-        throw new Error(res.data?.message || 'Chiusura sessione fallita');
-      }
-      const d = res.data.data;
-      const durata = calcolaDurataSessione(
-        d.sessione,
-        d.simulatore?.sessione ?? statoLive
-      );
-      if (d.accumulatori_stazione?.length && stazioneSelezionataId) {
-        setAccumulatori((prev) => {
-          const aggiornati = new Map(
-            d.accumulatori_stazione.map((a) => [String(a.id_accumulatore), a])
-          );
-          return prev.map((a) => aggiornati.get(String(a.id_accumulatore)) ?? a);
-        });
-      } else if (d.accumulatore) {
-        setAccumulatori((prev) =>
-          prev.map((a) =>
-            String(a.id_accumulatore) === String(d.accumulatore.id_accumulatore)
-              ? { ...a, ...d.accumulatore }
-              : a
-          )
-        );
-      }
-      setSessioneAttiva(null);
-      setStatoLive(null);
-      applicaRiepilogoDaSessione(
-        { ...d.sessione, ...durata },
-        d.simulatore?.sessione ?? statoLive,
-        sessioneAttiva.identificativo
-      );
-      applicaGamificationDaRisposta(d.gamification);
-      if (stazioneSelezionataId && accumulatoreSelezionatoId) {
-        await caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
-      }
-    } catch (err) {
-      setErroreAzione(messaggioErroreApi(err, 'Impossibile terminare la sessione'));
-    } finally {
-      setTerminaInCorso(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!sessioneAttiva?.id_sessione) return undefined;
-
-    let attivo = true;
-    async function poll() {
-      try {
-        const res = await axios.get(`${API_URL}/sessione/stato`, {
-          params: { id_sessione: sessioneAttiva.id_sessione },
-        });
-        if (!attivo || res.data?.status !== 'success') return;
-        const live = res.data.data?.live ?? null;
-        const sess = res.data.data?.sessione;
-        setStatoLive(live);
-        if (sess?.quantita_kwh != null) {
-          setSessioneAttiva((prev) =>
-            prev ? { ...prev, quantita_kwh: sess.quantita_kwh } : prev
-          );
-        }
-        if (res.data.data?.accumulatore) {
-          const acc = res.data.data.accumulatore;
-          setAccumulatori((prev) =>
-            prev.map((a) =>
-              String(a.id_accumulatore) === String(acc.id_accumulatore)
-                ? { ...a, ...acc }
-                : a
-            )
-          );
-        }
-        if (res.data.data?.sessione?.stato === 'terminata') {
-          const sess = res.data.data.sessione;
-          const idColonnina = sessioneAttiva.identificativo;
-          applicaRiepilogoDaSessione(sess, live, idColonnina);
-          applicaGamificationDaRisposta(res.data.data?.gamification);
-          setSessioneAttiva(null);
-          setStatoLive(null);
-          if (stazioneSelezionataId && accumulatoreSelezionatoId) {
-            caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
-          }
-        }
-      } catch (err) {
-        console.warn('poll sessione:', err.message);
-      }
-    }
-
-    poll();
-    const timer = setInterval(poll, 5000);
-    return () => {
-      attivo = false;
-      clearInterval(timer);
-    };
-  }, [sessioneAttiva?.id_sessione]);
 
   if (loading) {
     return (
@@ -2154,9 +2113,8 @@ function Mappa() {
     0
   );
 
-  const inSessione = Boolean(sessioneAttiva);
-  const mostraAccumulatori = Boolean(stazioneSelezionata && !inSessione);
-  const mostraColonnine = Boolean(accumulatoreSelezionatoId && !inSessione);
+  const mostraAccumulatori = Boolean(stazioneSelezionata);
+  const mostraColonnine = Boolean(accumulatoreSelezionatoId);
 
   const centerLat = stazioneSelezionata
     ? stazioneSelezionata.lat
@@ -2178,30 +2136,31 @@ function Mappa() {
       )}
 
       {erroreAzione && <p className="mappa-errore">{erroreAzione}</p>}
+      {erroreSessione && !isAdmin && (
+        <p className="mappa-errore">{erroreSessione}</p>
+      )}
 
-      <ModalGuadagnoXp reward={xpReward} onContinua={chiudiXpMostraRiepilogo} />
+      {haSessioniAttive && !isAdmin && (
+        <div className="card mappa-banner-sessioni">
+          <p>
+            <strong>{sessioniAttive.length}</strong>{' '}
+            {sessioniAttive.length === 1 ? 'ricarica in corso' : 'ricariche in corso'}.
+            Monitora energia e durata dalla{' '}
+            <Link to="/">Dashboard</Link>.
+          </p>
+        </div>
+      )}
 
-      <ModalRiepilogo
-        riepilogo={xpReward ? null : riepilogoSessione}
-        stazioneNome={stazioneSelezionata?.nome}
-        onChiudi={chiudiRiepilogo}
-      />
+      {messaggioSessione && (
+        <p className="sessione-msg mappa-msg-avvio">{messaggioSessione}</p>
+      )}
 
-      {inSessione ? (
-        <PannelloSessione
-          sessioneAttiva={sessioneAttiva}
-          statoLive={statoLive}
-          onTermina={terminaSessione}
-          terminaInCorso={terminaInCorso}
-          messaggio={messaggioSessione}
-        />
-      ) : (
-        <>
+      <>
           <TabellaStazioni
             stazioni={stazioni}
             stazioneSelezionataId={stazioneSelezionataId}
             onSeleziona={selezionaStazione}
-            disabilitata={inSessione}
+            disabilitata={false}
           />
 
           <div
@@ -2286,10 +2245,10 @@ function Mappa() {
               onSelezionaColonnina={selezionaColonnina}
               onAvviaSessione={avviaSessione}
               avvioInCorso={avvioInCorso}
+              soloLettura={isAdmin}
             />
           )}
-        </>
-      )}
+      </>
     </div>
   );
 }
@@ -2321,10 +2280,12 @@ function AppShell() {
         path="/*"
         element={
           utente ? (
-            <div className="app-shell">
-              <Navbar />
-              <main className="app-main">
-                <Routes>
+            <SessionProvider>
+              <div className="app-shell">
+                <SessionModals />
+                <Navbar />
+                <main className="app-main">
+                  <Routes>
                   <Route
                     path="/"
                     element={
@@ -2360,9 +2321,10 @@ function AppShell() {
                     }
                   />
                   <Route path="*" element={<Navigate to="/mappa" replace />} />
-                </Routes>
-              </main>
-            </div>
+                  </Routes>
+                </main>
+              </div>
+            </SessionProvider>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -2381,5 +2343,6 @@ function App() {
     </AuthProvider>
   );
 }
+
 
 export default App;

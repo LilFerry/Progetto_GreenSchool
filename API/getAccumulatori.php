@@ -1,6 +1,8 @@
 <?php
 header('Content-Type: application/json; charset=utf-8');
 
+require_once __DIR__ . '/includes/accumulatore_helpers.php';
+
 try {
     $pdo = new PDO(
         'mysql:host=127.0.0.1;dbname=stazione_ricarica;charset=utf8mb4',
@@ -54,8 +56,9 @@ try {
         $row['potenza_max_scarica_kw']   = (float) $row['potenza_max_scarica_kw'];
         $row['livello_corrente_kwh']     = (float) $row['livello_corrente_kwh'];
         $row['percentuale_carica']       = (float) $row['percentuale_carica'];
-        $row['soglia_minima_perc']       = (int)   $row['soglia_minima_perc'];
-        $row['soglia_massima_perc']      = (int)   $row['soglia_massima_perc'];
+        $row['soglia_minima_perc']       = (float) $row['soglia_minima_perc'];
+        $row['soglia_massima_perc']      = (float) $row['soglia_massima_perc'];
+        $row = normalizza_stato_accumulatore_riga($row);
     }
     unset($row);
 

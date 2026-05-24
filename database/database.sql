@@ -4,9 +4,14 @@ CHARACTER SET utf8mb4
 COLLATE utf8mb4_general_ci;
 
 USE `stazione_ricarica`;
--- Seed: 10 accumulatori (auto separati da bici/monopattino), punti variabili per tipo.
--- Tariffa solo in punti_ricarica.tariffa_predefinita (tabella tariffe_orarie vuota).
--- Admin senza badge; guest guest@stazionericarica.it / guest123; sessioni e storico batteria vuoti.
+
+-- Installazione pulita GreenSchool: importare solo questo file.
+-- Admin: admin@stazionericarica.it / admin123 (password_hash NULL, fallback in PHP).
+-- Accumulatori: stato attivo se percentuale_carica > soglia_minima_perc, altrimenti offline.
+-- Gamification: tabelle utente_gamification e missioni_giornaliere_progresso incluse (vuote).
+-- Vuoti per nuova installazione: sessioni_ricarica, storico_livello_batteria, badge_utente,
+--   utente_gamification, missioni_giornaliere_progresso.
+-- Seed: 10 accumulatori, punti di ricarica; tariffe solo in punti_ricarica.tariffa_predefinita.
 
 -- MySQL dump 10.13  Distrib 8.0.43, for Win64 (x86_64)
 --
@@ -42,7 +47,7 @@ CREATE TABLE `accumulatori_stazione` (
   `potenza_max_scarica_kw` decimal(6,2) DEFAULT NULL,
   `livello_corrente_kwh` decimal(10,2) DEFAULT 0.00,
   `percentuale_carica` decimal(5,2) DEFAULT 0.00,
-  `stato_operativo` enum('carica','scarica','standby','guasto','manutenzione') DEFAULT 'standby',
+  `stato_operativo` enum('carica','scarica','attivo','offline','guasto','manutenzione') DEFAULT 'offline',
   `data_ultimo_aggiornamento` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `soglia_minima_perc` decimal(5,2) DEFAULT 20.00,
   `soglia_massima_perc` decimal(5,2) DEFAULT 90.00,
@@ -59,16 +64,16 @@ CREATE TABLE `accumulatori_stazione` (
 
 LOCK TABLES `accumulatori_stazione` WRITE;
 /*!40000 ALTER TABLE `accumulatori_stazione` DISABLE KEYS */;
-INSERT INTO `accumulatori_stazione` VALUES ('acc00000-0000-4000-8000-000000000001','26936b4e-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 1 - IP',80.00,72.00,50.00,40.00,60.00,83.33,'standby','2026-05-23 10:00:00',15.00,95.00),
-('acc00000-0000-4000-8000-000000000002','26936b4e-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 2 - IP',80.00,72.00,50.00,40.00,60.00,83.33,'standby','2026-05-23 10:00:00',15.00,95.00),
-('acc00000-0000-4000-8000-000000000003','26936b4e-4ddf-11f1-b6f1-1063386df78e','Accumulatore Bici/Mono - IP',80.00,72.00,50.00,40.00,60.00,83.33,'standby','2026-05-23 10:00:00',15.00,95.00),
-('acc00000-0000-4000-8000-000000000004','26936b4f-4ddf-11f1-b6f1-1063386df78e','Accumulatore Bici/Mono - EST',80.00,72.00,50.00,40.00,60.00,83.33,'standby','2026-05-23 10:00:00',15.00,95.00),
-('acc00000-0000-4000-8000-000000000005','26936b50-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 1 - OVE',80.00,72.00,50.00,40.00,60.00,83.33,'standby','2026-05-23 10:00:00',15.00,95.00),
-('acc00000-0000-4000-8000-000000000006','26936b51-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 1 - AVE',80.00,72.00,50.00,40.00,60.00,83.33,'standby','2026-05-23 10:00:00',15.00,95.00),
-('acc00000-0000-4000-8000-000000000007','26936b51-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 2 - AVE',80.00,72.00,50.00,40.00,60.00,83.33,'standby','2026-05-23 10:00:00',15.00,95.00),
-('acc00000-0000-4000-8000-000000000008','26936b51-4ddf-11f1-b6f1-1063386df78e','Accumulatore Bici/Mono - AVE',80.00,72.00,50.00,40.00,60.00,83.33,'standby','2026-05-23 10:00:00',15.00,95.00),
-('acc00000-0000-4000-8000-000000000009','26936b52-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 1 - GIA',80.00,72.00,50.00,40.00,60.00,83.33,'standby','2026-05-23 10:00:00',15.00,95.00),
-('acc00000-0000-4000-8000-000000000010','26936b52-4ddf-11f1-b6f1-1063386df78e','Accumulatore Bici/Mono - GIA',80.00,72.00,50.00,40.00,60.00,83.33,'standby','2026-05-23 10:00:00',15.00,95.00);
+INSERT INTO `accumulatori_stazione` VALUES ('acc00000-0000-4000-8000-000000000001','26936b4e-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 1 - IP',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','2026-05-23 10:00:00',15.00,95.00),
+('acc00000-0000-4000-8000-000000000002','26936b4e-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 2 - IP',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','2026-05-23 10:00:00',15.00,95.00),
+('acc00000-0000-4000-8000-000000000003','26936b4e-4ddf-11f1-b6f1-1063386df78e','Accumulatore Bici/Mono - IP',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','2026-05-23 10:00:00',15.00,95.00),
+('acc00000-0000-4000-8000-000000000004','26936b4f-4ddf-11f1-b6f1-1063386df78e','Accumulatore Bici/Mono - EST',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','2026-05-23 10:00:00',15.00,95.00),
+('acc00000-0000-4000-8000-000000000005','26936b50-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 1 - OVE',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','2026-05-23 10:00:00',15.00,95.00),
+('acc00000-0000-4000-8000-000000000006','26936b51-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 1 - AVE',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','2026-05-23 10:00:00',15.00,95.00),
+('acc00000-0000-4000-8000-000000000007','26936b51-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 2 - AVE',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','2026-05-23 10:00:00',15.00,95.00),
+('acc00000-0000-4000-8000-000000000008','26936b51-4ddf-11f1-b6f1-1063386df78e','Accumulatore Bici/Mono - AVE',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','2026-05-23 10:00:00',15.00,95.00),
+('acc00000-0000-4000-8000-000000000009','26936b52-4ddf-11f1-b6f1-1063386df78e','Accumulatore Auto 1 - GIA',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','2026-05-23 10:00:00',15.00,95.00),
+('acc00000-0000-4000-8000-000000000010','26936b52-4ddf-11f1-b6f1-1063386df78e','Accumulatore Bici/Mono - GIA',80.00,72.00,50.00,40.00,60.00,83.33,'attivo','2026-05-23 10:00:00',15.00,95.00);
 /*!40000 ALTER TABLE `accumulatori_stazione` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -91,7 +96,7 @@ CREATE TABLE `badge_utente` (
   KEY `idx_badge_rfid` (`codice_rfid`),
   KEY `idx_badge_utente` (`id_utente`),
   CONSTRAINT `badge_utente_ibfk_1` FOREIGN KEY (`id_utente`) REFERENCES `utenti` (`id_utente`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -100,7 +105,6 @@ CREATE TABLE `badge_utente` (
 
 LOCK TABLES `badge_utente` WRITE;
 /*!40000 ALTER TABLE `badge_utente` DISABLE KEYS */;
-INSERT INTO `badge_utente` VALUES (1,'c2000000-0000-0000-0000-000000000010','RFID-GUEST-0001','Badge Ospite','2026-05-23 10:00:00',0);
 /*!40000 ALTER TABLE `badge_utente` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -236,7 +240,7 @@ CREATE TABLE `stazioni` (
 
 LOCK TABLES `stazioni` WRITE;
 /*!40000 ALTER TABLE `stazioni` DISABLE KEYS */;
-INSERT INTO `stazioni` VALUES ('26936b4e-4ddf-11f1-b6f1-1063386df78e','Stazione Ricarica Ingresso Principale','Via dei Carpani 19B Castelfranco Veneto',45.68141100,11.93797800,_binary '\0\0\0\0\0\0\0\'��>\�\'@<\�y8\�F@','pubblico','2026-05-18 10:00:00'),('26936b4f-4ddf-11f1-b6f1-1063386df78e','Stazione Ricarica Parcheggio Est','Via dei Carpani 19B Castelfranco Veneto',45.68155300,11.93815400,_binary '\0\0\0\0\0\0\0\"9?�U\�\'@ݾ� =\�F@','pubblico','2026-05-18 10:00:00'),('26936b50-4ddf-11f1-b6f1-1063386df78e','Stazione Ricarica Parcheggio Ovest','Via dei Carpani 19B Castelfranco Veneto',45.68127600,11.93780200,_binary '\0\0\0\0\0\0\0-?p?\'\�\'@\\\�M\r4\�F@','pubblico','2026-05-12 08:47:04'),('26936b51-4ddf-11f1-b6f1-1063386df78e','Stazione Ricarica Via Avenale','Via Avenale 6 Castelfranco Veneto',45.67984500,11.92488600,_binary '\0\0\0\0\0\0\0xe�?\�\'@��4)\�F@','pubblico','2026-05-18 08:05:00'),('26936b52-4ddf-11f1-b6f1-1063386df78e','Stazione Ricarica Giardini','Via dei Carpani 19B Castelfranco Veneto',45.68148900,11.93785600,_binary '\0\0\0\0\0\0\0��`�.\�\'@�\�;\�F@','pubblico','2026-05-18 08:10:10');
+INSERT INTO `stazioni` VALUES ('26936b4e-4ddf-11f1-b6f1-1063386df78e','Stazione Ricarica Ingresso Principale','Via dei Carpani 19B Castelfranco Veneto',45.68141100,11.93797800,_binary '\0\0\0\0\0\0\0\'��>\�\'@<\�y8\�F@','pubblico','2026-05-18 10:00:00'),('26936b4f-4ddf-11f1-b6f1-1063386df78e','Stazione Ricarica Parcheggio Est','Via dei Carpani 19B Castelfranco Veneto',45.68155300,11.93815400,_binary '\0\0\0\0\0\0\0\"9?�U\�\'@?� =\�F@','pubblico','2026-05-18 10:00:00'),('26936b50-4ddf-11f1-b6f1-1063386df78e','Stazione Ricarica Parcheggio Ovest','Via dei Carpani 19B Castelfranco Veneto',45.68127600,11.93780200,_binary '\0\0\0\0\0\0\0-?p?\'\�\'@\\\�M\r4\�F@','pubblico','2026-05-12 08:47:04'),('26936b51-4ddf-11f1-b6f1-1063386df78e','Stazione Ricarica Via Avenale','Via Avenale 6 Castelfranco Veneto',45.67984500,11.92488600,_binary '\0\0\0\0\0\0\0xe�?\�\'@��4)\�F@','pubblico','2026-05-18 08:05:00'),('26936b52-4ddf-11f1-b6f1-1063386df78e','Stazione Ricarica Giardini','Via dei Carpani 19B Castelfranco Veneto',45.68148900,11.93785600,_binary '\0\0\0\0\0\0\0��`�.\�\'@�\�;\�F@','pubblico','2026-05-18 08:10:10');
 /*!40000 ALTER TABLE `stazioni` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -331,7 +335,7 @@ CREATE TABLE `utenti` (
 
 LOCK TABLES `utenti` WRITE;
 /*!40000 ALTER TABLE `utenti` DISABLE KEYS */;
-INSERT INTO `utenti` VALUES ('a1000000-0000-0000-0000-000000000001','admin@stazionericarica.it',NULL,'+39 333 1000001','Marco','Amministratori','2026-01-01 07:00:00','completo',1),('c2000000-0000-0000-0000-000000000010','guest@stazionericarica.it','$2y$10$WlNiKzR31Pyd13SVp5Ex0.WaDkSD3aEd0JEmylGMBieuIriOXxLaa',NULL,NULL,NULL,'2026-05-23 10:00:00','ospite',1);
+INSERT INTO `utenti` VALUES ('a1000000-0000-0000-0000-000000000001','admin@stazionericarica.it',NULL,'+39 02 1234567','Paolo','Marchesini','2026-01-15 09:00:00','completo',1);
 /*!40000 ALTER TABLE `utenti` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -373,6 +377,24 @@ CREATE TABLE `missioni_giornaliere_progresso` (
   CONSTRAINT `missioni_progresso_ibfk_1` FOREIGN KEY (`id_utente`) REFERENCES `utenti` (`id_utente`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `utente_gamification`
+--
+
+LOCK TABLES `utente_gamification` WRITE;
+/*!40000 ALTER TABLE `utente_gamification` DISABLE KEYS */;
+/*!40000 ALTER TABLE `utente_gamification` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Dumping data for table `missioni_giornaliere_progresso`
+--
+
+LOCK TABLES `missioni_giornaliere_progresso` WRITE;
+/*!40000 ALTER TABLE `missioni_giornaliere_progresso` DISABLE KEYS */;
+/*!40000 ALTER TABLE `missioni_giornaliere_progresso` ENABLE KEYS */;
+UNLOCK TABLES;
 
 --
 -- Temporary view structure for view `vw_report_giornaliero`

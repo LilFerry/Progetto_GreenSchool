@@ -88,7 +88,7 @@ app.get('/api/stazioniVicine', async (req, res) => {
     res.json(dati);
   } catch (error) {
     const url = phpUrl('stazioni_vicine.php');
-    console.error('stazioniVicine:', error.message, '→', url);
+    console.error('[ERRORE] stazioniVicine:', error.message, '→', url);
     res.status(500).json({
       errore: 'Impossibile ottenere le stazioni',
       dettaglio: `Verifica in browser: ${url}`,
@@ -110,7 +110,7 @@ app.get('/api/accumulatori', async (req, res) => {
 
     res.json(dati);
   } catch (error) {
-    console.error('accumulatori:', error.message);
+    console.error('[ERRORE] accumulatori:', error.message);
     res.status(500).json({ errore: 'Impossibile ottenere gli accumulatori' });
   }
 });
@@ -174,15 +174,15 @@ app.get('/api/colonnine', async (req, res) => {
         });
         const dati = parsePhpJson(fallback.data);
         if (dati?.status === 'success') {
-          console.warn('colonnine: uso fallback disponibilita_colonna.php');
+          console.warn('[WARN] colonnine: uso fallback disponibilita_colonna.php');
           return res.json(mapDisponibilitaToColonnine(dati, req.query.id_stazione));
         }
       } catch (fallbackErr) {
-        console.error('colonnine fallback:', fallbackErr.message);
+        console.error('[ERRORE] colonnine fallback:', fallbackErr.message);
       }
     }
 
-    console.error('colonnine:', error.message, '→', urlColonnine);
+    console.error('[ERRORE] colonnine:', error.message, '→', urlColonnine);
     res.status(500).json({
       status: 'error',
       message:
@@ -202,11 +202,14 @@ app.post('/api/sessione/avvia', async (req, res) => {
       validateStatus: () => true,
     });
     const body = parsePhpJson(response.data);
+    if (response.status >= 400) {
+      console.error('[ERRORE] sessione/avvia:', body.message);
+    }
     res.status(response.status).json(body);
   } catch (error) {
     const status = error.response?.status || 500;
     const body = phpErrorBody(error, 'Impossibile avviare la sessione');
-    console.error('sessione/avvia:', body.message || error.message);
+    console.error('[ERRORE] sessione/avvia:', body.message || error.message);
     res.status(status).json(body);
   }
 });
@@ -219,11 +222,14 @@ app.post('/api/sessione/termina', async (req, res) => {
       validateStatus: () => true,
     });
     const body = parsePhpJson(response.data);
+    if (response.status >= 400) {
+      console.error('[ERRORE] sessione/termina:', body.message);
+    }
     res.status(response.status).json(body);
   } catch (error) {
     const status = error.response?.status || 500;
     const body = phpErrorBody(error, 'Impossibile terminare la sessione');
-    console.error('sessione/termina:', body.message || error.message);
+    console.error('[ERRORE] sessione/termina:', body.message || error.message);
     res.status(status).json(body);
   }
 });
@@ -381,11 +387,11 @@ async function verificaApiPhp() {
   const testUrl = phpUrl('stazioni_vicine.php');
   try {
     const r = await axios.get(testUrl, { timeout: 4000 });
-    console.log(`API PHP OK (${r.status}): ${testUrl}`);
+    console.log(`[OK] API PHP raggiungibile (${r.status}): ${testUrl}`);
   } catch (e) {
-    console.error('API PHP NON RAGGIUNGIBILE:', testUrl);
+    console.error('[ERRORE] API PHP NON RAGGIUNGIBILE:', testUrl);
     console.error(
-      '  Copia i file da Progetto_GreenSchool/API in C:\\xampp\\htdocs\\',
+      '  → Copia i file da Progetto_GreenSchool/API in C:\\xampp\\htdocs\\',
       'oppure imposta PHP_API_BASE con il percorso corretto.'
     );
     return;
@@ -400,19 +406,21 @@ async function verificaApiPhp() {
     );
     const raw = typeof r.data === 'string' ? r.data.trim() : '';
     if (raw.startsWith('<')) {
-      console.error('API sessioni NON CONFIGURATA (risposta HTML):', sessionUrl);
-      console.error('  Esegui: .\\API\\sync-xampp.ps1  (copia includes/ in htdocs)');
+      console.error('[ERRORE] API sessioni NON CONFIGURATA (risposta HTML):', sessionUrl);
+      console.error('  → Esegui: .\\API\\sync-xampp.ps1  (copia includes/ in htdocs)');
     } else {
-      console.log(`API sessioni OK: ${sessionUrl}`);
+      console.log(`[OK] API sessioni raggiungibile: ${sessionUrl}`);
     }
   } catch (e) {
-    console.error('API sessioni non verificabile:', sessionUrl, e.message);
+    console.error('[ERRORE] API sessioni non verificabile:', sessionUrl, e.message);
   }
 }
 
 app.listen(PORT, () => {
-  console.log(`Backend Ponte avviato su http://localhost:${PORT}`);
-  console.log(`API PHP: ${PHP_API_BASE}`);
-  console.log(`Simulatore: ${SIMULATORE_URL}`);
+  console.log('─────────────────────────────────────────');
+  console.log(`  Backend Ponte avviato su http://localhost:${PORT}`);
+  console.log(`  API PHP  : ${PHP_API_BASE}`);
+  console.log(`  Simulatore: ${SIMULATORE_URL}`);
+  console.log('─────────────────────────────────────────');
   verificaApiPhp();
 });

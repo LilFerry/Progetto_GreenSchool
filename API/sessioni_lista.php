@@ -30,7 +30,7 @@ try {
                s.data_inizio, s.data_fine, s.quantita_kwh, s.costo_totale,
                s.stato_pagamento, s.tipo_tariffa_applicata, s.motivazione_gratuita,
                p.identificativo_fisico, p.tipo_veicolo, p.tipo_connettore, p.potenza_max_kw,
-               p.tariffa_predefinita, p.id_stazione,
+               p.tariffa_predefinita, p.id_stazione, p.id_accumulatore,
                st.nome AS nome_stazione, st.indirizzo AS indirizzo_stazione
         FROM sessioni_ricarica s
         INNER JOIN punti_ricarica p ON p.id_punto = s.id_punto
@@ -70,6 +70,7 @@ try {
             'potenza_max_kw' => $row['potenza_max_kw'] !== null ? (float) $row['potenza_max_kw'] : null,
             'tariffa_kwh' => $row['tariffa_predefinita'] !== null ? (float) $row['tariffa_predefinita'] : null,
             'id_stazione' => $row['id_stazione'],
+            'id_accumulatore' => $row['id_accumulatore'],
             'nome_stazione' => $row['nome_stazione'],
             'indirizzo_stazione' => $row['indirizzo_stazione'],
             'metodo_avvio' => $row['metodo_avvio'],

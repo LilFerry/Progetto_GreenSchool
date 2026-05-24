@@ -14,6 +14,7 @@ from typing import Any, Callable, Optional
 
 from mysql.connector.cursor import MySQLCursorDict
 
+from accumulatore_utils import stato_idle_da_percentuale
 from config import STORICO_INTERVAL_SEC, TICK_INTERVAL_SEC
 from database import fetch_one, get_connection
 
@@ -194,10 +195,16 @@ class ColonninaSimulator:
 
             acc = fetch_one(
                 cur,
-                "SELECT livello_corrente_kwh, percentuale_carica FROM accumulatori_stazione WHERE id_accumulatore = %s",
+                """
+                SELECT livello_corrente_kwh, percentuale_carica, soglia_minima_perc
+                FROM accumulatori_stazione WHERE id_accumulatore = %s
+                """,
                 (s.id_accumulatore,),
             )
             livello_finale = float(acc["livello_corrente_kwh"]) if acc else 0.0
+            perc_finale = float(acc["percentuale_carica"]) if acc else 0.0
+            soglia_min = float(acc["soglia_minima_perc"]) if acc else 0.0
+            stato_idle = stato_idle_da_percentuale(perc_finale, soglia_min)
 
             cur.execute(
                 """
@@ -214,11 +221,11 @@ class ColonninaSimulator:
             cur.execute(
                 """
                 UPDATE accumulatori_stazione
-                SET stato_operativo = 'standby',
+                SET stato_operativo = %s,
                     data_ultimo_aggiornamento = NOW()
                 WHERE id_accumulatore = %s
                 """,
-                (s.id_accumulatore,),
+                (stato_idle, s.id_accumulatore),
             )
 
             cur.execute(

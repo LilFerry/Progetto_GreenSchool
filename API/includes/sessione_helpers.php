@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/accumulatore_helpers.php';
 
 const METODI_AVVIO_AMMESSI = ['APP', 'RFID', 'QR_CODE', 'ADMIN'];
 
@@ -63,11 +64,13 @@ function carica_accumulatore(PDO $pdo, string $idAccumulatore): ?array
     );
     $stmt->execute(['id' => $idAccumulatore]);
     $row = $stmt->fetch();
-    return $row ? formatta_accumulatore($row) : null;
+    return $row ? formatta_accumulatore(normalizza_stato_accumulatore_riga($row)) : null;
 }
 
 function formatta_accumulatore(array $row): array
 {
+    $row = normalizza_stato_accumulatore_riga($row);
+
     return [
         'id_accumulatore' => $row['id_accumulatore'],
         'id_stazione' => $row['id_stazione'],
@@ -152,16 +155,25 @@ function scarica_accumulatore(PDO $pdo, string $idAccumulatore, float $kwh): ?ar
     $capUtil = (float) $acc['capacita_utilizzabile_kwh'];
     $perc = $capUtil > 0 ? min(100.0, ($livello / $capUtil) * 100.0) : 0.0;
 
+    $stmtSoglia = $pdo->prepare(
+        'SELECT soglia_minima_perc FROM accumulatori_stazione WHERE id_accumulatore = :id'
+    );
+    $stmtSoglia->execute(['id' => $idAccumulatore]);
+    $sogliaRow = $stmtSoglia->fetch();
+    $sogliaMin = $sogliaRow ? (float) $sogliaRow['soglia_minima_perc'] : 0.0;
+    $statoIdle = stato_idle_da_percentuale($perc, $sogliaMin);
+
     $pdo->prepare(
         "UPDATE accumulatori_stazione
          SET livello_corrente_kwh = :livello,
              percentuale_carica = :perc,
-             stato_operativo = 'standby',
+             stato_operativo = :stato,
              data_ultimo_aggiornamento = NOW()
          WHERE id_accumulatore = :id"
     )->execute([
         'livello' => round($livello, 2),
         'perc' => round($perc, 2),
+        'stato' => $statoIdle,
         'id' => $idAccumulatore,
     ]);
 
@@ -258,10 +270,7 @@ function chiudi_sessione_su_db(
     )->execute(['kwh' => $kwh, 'costo' => $costo, 'id' => $idSessione]);
 
     if ($idAccumulatore) {
-        $pdo->prepare(
-            "UPDATE accumulatori_stazione SET stato_operativo = 'standby', data_ultimo_aggiornamento = NOW()
-             WHERE id_accumulatore = :a"
-        )->execute(['a' => $idAccumulatore]);
+        applica_stato_idle_accumulatore($pdo, $idAccumulatore);
     } else {
         $stmt = $pdo->prepare(
             "SELECT p.id_stazione, p.tipo_veicolo FROM sessioni_ricarica s
@@ -272,9 +281,7 @@ function chiudi_sessione_su_db(
         if ($row) {
             $acc = seleziona_accumulatore($pdo, $row['id_stazione'], $row['tipo_veicolo']);
             if ($acc) {
-                $pdo->prepare(
-                    "UPDATE accumulatori_stazione SET stato_operativo = 'standby' WHERE id_accumulatore = :a"
-                )->execute(['a' => $acc['id_accumulatore']]);
+                applica_stato_idle_accumulatore($pdo, $acc['id_accumulatore']);
             }
         }
     }
@@ -299,9 +306,7 @@ function annulla_sessione(PDO $pdo, string $idSessione): void
     if ($row) {
         $acc = seleziona_accumulatore($pdo, $row['id_stazione'], $row['tipo_veicolo']);
         if ($acc) {
-            $pdo->prepare(
-                "UPDATE accumulatori_stazione SET stato_operativo = 'standby' WHERE id_accumulatore = :id"
-            )->execute(['id' => $acc['id_accumulatore']]);
+            applica_stato_idle_accumulatore($pdo, $acc['id_accumulatore']);
         }
     }
 }

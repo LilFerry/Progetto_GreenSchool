@@ -98,22 +98,6 @@ try {
             $pdo->rollBack();
             json_error('Utente non attivo', 409);
         }
-
-        // Un utente non può avere due sessioni aperte contemporaneamente
-        $stmt = $pdo->prepare(
-            "SELECT id_sessione, id_punto FROM sessioni_ricarica
-             WHERE id_utente = :u AND data_fine IS NULL LIMIT 1 FOR UPDATE"
-        );
-        $stmt->execute(['u' => $idUtente]);
-        $altra = $stmt->fetch();
-        if ($altra) {
-            $pdo->rollBack();
-            json_error(
-                'Hai già una sessione di ricarica attiva',
-                409,
-                ['id_sessione' => $altra['id_sessione'], 'id_punto' => $altra['id_punto']]
-            );
-        }
     }
 
     $idAccPunto = (string) ($punto['id_accumulatore'] ?? '');
@@ -146,8 +130,11 @@ try {
         }
     }
 
+    applica_stato_idle_accumulatore($pdo, $acc['id_accumulatore']);
+
     $stmt = $pdo->prepare(
-        "SELECT id_accumulatore, livello_corrente_kwh, stato_operativo
+        "SELECT id_accumulatore, livello_corrente_kwh, percentuale_carica,
+                soglia_minima_perc, stato_operativo
          FROM accumulatori_stazione WHERE id_accumulatore = :id FOR UPDATE"
     );
     $stmt->execute(['id' => $acc['id_accumulatore']]);
@@ -156,6 +143,16 @@ try {
     if (in_array($accLock['stato_operativo'], ['guasto', 'manutenzione'], true)) {
         $pdo->rollBack();
         json_error('Accumulatore non operativo', 409);
+    }
+
+    $perc = (float) $accLock['percentuale_carica'];
+    $sogliaMin = (float) $accLock['soglia_minima_perc'];
+    if ($perc <= $sogliaMin || $accLock['stato_operativo'] === 'offline') {
+        $pdo->rollBack();
+        json_error(
+            'Accumulatore sotto la soglia minima (' . round($sogliaMin, 1) . '%): ricarica non avviabile',
+            409
+        );
     }
 
     if ((float) $accLock['livello_corrente_kwh'] <= 0.01) {

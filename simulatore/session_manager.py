@@ -378,13 +378,26 @@ class SessionManager:
                 (kwh, costo, id_sessione),
             )
             if acc:
+                from accumulatore_utils import stato_idle_da_percentuale
+
+                cur.execute(
+                    """
+                    SELECT percentuale_carica, soglia_minima_perc
+                    FROM accumulatori_stazione WHERE id_accumulatore = %s
+                    """,
+                    (acc["id_accumulatore"],),
+                )
+                acc_row = cur.fetchone()
+                perc = float(acc_row["percentuale_carica"]) if acc_row else 0.0
+                soglia = float(acc_row["soglia_minima_perc"]) if acc_row else 0.0
+                stato_idle = stato_idle_da_percentuale(perc, soglia)
                 cur.execute(
                     """
                     UPDATE accumulatori_stazione
-                    SET stato_operativo = 'standby'
+                    SET stato_operativo = %s
                     WHERE id_accumulatore = %s
                     """,
-                    (acc["id_accumulatore"],),
+                    (stato_idle, acc["id_accumulatore"]),
                 )
 
         return {
