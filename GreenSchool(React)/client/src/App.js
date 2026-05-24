@@ -692,6 +692,7 @@ function Navbar() {
           <Link to="/mappa" className={linkClass('/mappa')}>Mappa</Link>
           <Link to="/game" className={linkClass('/game')}>Classifica</Link>
           <Link to="/storico" className={linkClass('/storico')}>Storico</Link>
+          <Link to="/scuola" className={linkClass('/scuola')}>Scuola</Link>
         </>
       )}
       <div className="navbar__user">
@@ -1082,7 +1083,7 @@ function Classifica() {
     <div>
       <h1 className="page-title">Classifica utenti</h1>
       <p className="page-subtitle">
-        Tutti gli utenti ordinati per XP totali. Gli amministratori non partecipano.
+        Tutti gli utenti ordinati per XP totali.
       </p>
 
       {loading && <p>Caricamento...</p>}
@@ -1275,6 +1276,158 @@ function Storico() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Scuola() {
+  const { utente } = useAuth();
+  const [dati, setDati] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [errore, setErrore] = useState(null);
+
+  useEffect(() => {
+    async function carica() {
+      setLoading(true);
+      setErrore(null);
+      try {
+        const response = await axios.get(`${API_URL}/scuola/consumi`);
+        if (response.status >= 400 || response.data?.status !== 'success') {
+          throw new Error(response.data?.message || 'Errore nel caricamento dati scuola');
+        }
+        setDati(response.data.data);
+      } catch (err) {
+        console.error('Errore caricamento scuola:', err);
+        setErrore(err.message || 'Impossibile caricare i dati della scuola');
+      } finally {
+        setLoading(false);
+      }
+    }
+    carica();
+  }, []);
+
+  return (
+    <div className="dashboard-scuola">
+      <h1 className="page-title">Scuola & Green School</h1>
+      <p className="page-subtitle">
+        Visualizza i consumi energetici della scuola
+      </p>
+
+      {loading && <p className="loading">Caricamento dati...</p>}
+      {errore && <p className="mappa-errore">{errore}</p>}
+
+      {!loading && dati && (
+        <>
+          {/* Sezione Informazioni Scuola */}
+          <div className="card card--scuola-info">
+            <h2 className="section-title">Istituto Tecnico Barsan Galilei</h2>
+            <p className="scuola-descrizione">
+              Partecipazione attiva al progetto Green School con focus sulla sostenibilità energetica
+              e sulla mobilità elettrica.
+            </p>
+            <a 
+              href="https://www.barsantigalilei.edu.it/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="btn-secondary btn-secondary--inline"
+            >
+              Visita sito della scuola →
+            </a>
+          </div>
+
+          {/* Sezione Consumi Energetici */}
+          <div className="card card--consumi">
+            <h2 className="section-title">Consumi Energetici</h2>
+            
+            {dati.consumi && dati.consumi.length > 0 ? (
+              <>
+                <div className="consumi-summary">
+                  <div className="consumi-stat">
+                    <span className="consumi-label">Totale Energia</span>
+                    <span className="consumi-valore">
+                      {Number(dati.totale_kwh ?? 0).toFixed(2)} kWh
+                    </span>
+                  </div>
+                  <div className="consumi-stat">
+                    <span className="consumi-label">Ricariche Effettuate</span>
+                    <span className="consumi-valore">{dati.numero_ricariche ?? 0}</span>
+                  </div>
+                  <div className="consumi-stat">
+                    <span className="consumi-label">Veicoli Ricaricati</span>
+                    <span className="consumi-valore">{dati.numero_veicoli ?? 0}</span>
+                  </div>
+                </div>
+
+                <div className="consumi-grafico-container">
+                  <h3 className="subsection-title">Consumo negli ultimi 30 giorni</h3>
+                  <table className="data-table data-table--consumi">
+                    <thead>
+                      <tr>
+                        <th>Data</th>
+                        <th>Energia (kWh)</th>
+                        <th>Ricariche</th>
+                        <th>Utenti</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dati.consumi.map((c, idx) => (
+                        <tr key={idx}>
+                          <td>
+                            {c.data 
+                              ? new Date(c.data).toLocaleDateString('it-IT')
+                              : `Giorno ${idx + 1}`}
+                          </td>
+                          <td>
+                            <strong>{Number(c.kwh_totali ?? 0).toFixed(2)}</strong>
+                          </td>
+                          <td>{c.numero_ricariche ?? 0}</td>
+                          <td>{c.numero_utenti ?? 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="empty-state">
+                Nessun dato disponibile. Inizia a ricaricare sulla mappa per registrare i consumi!
+              </p>
+            )}
+          </div>
+
+          {/* Sezione Statistiche */}
+          <div className="card card--statistiche">
+            <h2 className="section-title">Statistiche Green</h2>
+            <div className="stats-grid">
+              <div className="stat-box">
+                <p className="stat-label">CO₂ Evitata (stima)</p>
+                <p className="stat-value">
+                  {((dati.totale_kwh ?? 0) * 0.1).toFixed(2)} kg
+                </p>
+                <p className="stat-note">equivalente a 100g per kWh</p>
+              </div>
+              <div className="stat-box">
+                <p className="stat-label">Energia Media per Ricarica</p>
+                <p className="stat-value">
+                  {dati.numero_ricariche > 0 
+                    ? ((dati.totale_kwh ?? 0) / (dati.numero_ricariche ?? 1)).toFixed(2)
+                    : '—'} kWh
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* CTA */}
+          <div className="card card--cta-scuola">
+            <p className="page-subtitle" style={{ marginTop: 0 }}>
+              Ogni ricarica conta! Vai alla mappa per continuare a generare dati sostenibili per la scuola.
+            </p>
+            <Link to="/mappa" className="btn-primary">
+              Vai alla Mappa →
+            </Link>
           </div>
         </>
       )}
@@ -2303,7 +2456,14 @@ function AppShell() {
                       </SoloUtente>
                     }
                   />
-                  <Route path="/scuola" element={<Navigate to="/" replace />} />
+                  <Route
+                    path="/scuola"
+                    element={
+                      <SoloUtente>
+                        <Scuola />
+                      </SoloUtente>
+                    }
+                  />
                   <Route
                     path="/game"
                     element={

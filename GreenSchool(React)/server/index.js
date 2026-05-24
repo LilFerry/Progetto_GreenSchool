@@ -339,6 +339,18 @@ app.get('/api/gamification/classifica', async (req, res) => {
   }
 });
 
+app.get('/api/scuola/consumi', async (req, res) => {
+  try {
+    const response = await axios.get(phpUrl('scuola_consumi.php'), {
+      params: req.query,
+      validateStatus: () => true,
+    });
+    res.status(response.status).json(parsePhpJson(response.data));
+  } catch (error) {
+    res.status(500).json(phpErrorBody(error, 'Impossibile caricare i dati della scuola'));
+  }
+});
+
 app.get('/api/sessioni', async (req, res) => {
   try {
     const response = await axios.get(phpUrl('sessioni_lista.php'), {
