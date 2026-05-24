@@ -309,6 +309,30 @@ app.get('/api/admin/report-giornaliero', (req, res) => {
   proxyAdminGet('report_giornaliero.php', req, res, 'Impossibile ottenere il report giornaliero');
 });
 
+app.get('/api/gamification/profilo', async (req, res) => {
+  try {
+    const response = await axios.get(phpUrl('gamification_profilo.php'), {
+      params: req.query,
+      validateStatus: () => true,
+    });
+    res.status(response.status).json(parsePhpJson(response.data));
+  } catch (error) {
+    res.status(500).json(phpErrorBody(error, 'Impossibile caricare il profilo gamification'));
+  }
+});
+
+app.get('/api/gamification/classifica', async (req, res) => {
+  try {
+    const response = await axios.get(phpUrl('gamification_classifica.php'), {
+      params: req.query,
+      validateStatus: () => true,
+    });
+    res.status(response.status).json(parsePhpJson(response.data));
+  } catch (error) {
+    res.status(500).json(phpErrorBody(error, 'Impossibile caricare la classifica'));
+  }
+});
+
 app.get('/api/sessioni', async (req, res) => {
   try {
     const response = await axios.get(phpUrl('sessioni_lista.php'), {
@@ -337,12 +361,18 @@ app.post('/api/accumulatore/scarica', async (req, res) => {
 
 app.get('/api/simulatore/health', async (req, res) => {
   try {
-    const response = await axios.get(`${SIMULATORE_URL}/health`, { timeout: 3000 });
-    res.json(response.data);
+    const response = await axios.get(phpUrl('simulatore_health.php'), {
+      timeout: 8000,
+      validateStatus: () => true,
+    });
+    const body = parsePhpJson(response.data);
+    res.status(response.status >= 400 ? 503 : 200).json(body);
   } catch (error) {
     res.status(503).json({
       status: 'error',
-      message: 'Simulatore Python non raggiungibile. Eseguire: python simulatore/main.py',
+      message:
+        'Simulatore non verificabile. Avvia: python simulatore/main.py (porta 5050) e verifica http://127.0.0.1:5050/health',
+      dettaglio: error.message,
     });
   }
 });

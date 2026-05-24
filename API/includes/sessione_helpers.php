@@ -111,6 +111,7 @@ function carica_dati_post_sessione(PDO $pdo, string $idSessione): array
         'sessione' => [
             'id_sessione' => $sessione['id_sessione'],
             'id_punto' => $sessione['id_punto'],
+            'id_stazione' => $sessione['id_stazione'],
             'id_utente' => $sessione['id_utente'],
             'data_inizio' => $sessione['data_inizio'],
             'data_fine' => $sessione['data_fine'],

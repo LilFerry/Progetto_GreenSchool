@@ -548,6 +548,14 @@ body {
 .stato-badge--default { background: #e5e7eb; color: #374151; }
 
 /* ===== Mappa: selezione e dettaglio ===== */
+.mappa-errore--simulatore {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
 .mappa-errore {
   color: #991b1b;
 }
@@ -1152,4 +1160,298 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* ===== Gamification ===== */
+.xp-bar-wrap {
+  margin: 1rem 0;
+}
+
+.xp-bar-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.xp-bar-livello {
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.xp-bar-testo {
+  color: var(--text-muted);
+}
+
+.xp-bar-track {
+  height: 12px;
+  background: var(--primary-light);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.xp-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.xp-bar-totale {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.modal-overlay--xp {
+  z-index: 1100;
+  background: rgba(15, 92, 75, 0.65);
+}
+
+.modal-card--xp {
+  max-width: 440px;
+  text-align: center;
+}
+
+.xp-celebration__icon {
+  font-size: 3rem;
+  display: block;
+  animation: xp-bounce 0.6s ease;
+}
+
+.xp-celebration__titolo {
+  margin: 0.25rem 0;
+  font-size: 2.5rem;
+  color: var(--primary-dark);
+  animation: xp-pop 0.5s ease;
+}
+
+.xp-celebration__sottotitolo {
+  margin: 0 0 1rem;
+  color: var(--text-muted);
+}
+
+@keyframes xp-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes xp-pop {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.xp-breakdown {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.xp-breakdown li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.xp-breakdown li:last-child {
+  border-bottom: none;
+}
+
+.xp-missioni-bonus {
+  background: var(--primary-light);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  text-align: left;
+}
+
+.xp-missioni-bonus__titolo {
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.xp-missioni-bonus ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.xp-level-up {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius);
+  margin: 0 0 1rem;
+}
+
+.card--xp-summary {
+  margin-bottom: 1.25rem;
+}
+
+.xp-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.xp-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: white;
+  font-weight: 800;
+  font-size: 1.1rem;
+}
+
+.xp-summary-stat {
+  margin: 0.15rem 0;
+  font-size: 0.95rem;
+}
+
+.btn-secondary--inline {
+  display: inline-block;
+  margin-top: 1rem;
+  text-decoration: none;
+  text-align: center;
+}
+
+.missioni-card {
+  margin-bottom: 1.25rem;
+}
+
+.missioni-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.missione-item {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+}
+
+.missione-item--completata {
+  border-color: var(--success);
+  background: #ecfdf5;
+}
+
+.missione-item__testa {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.missione-item__bonus {
+  font-size: 0.85rem;
+  color: var(--primary-dark);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.missione-item__desc {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.missione-item__barra {
+  height: 8px;
+  background: var(--primary-light);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.missione-item__fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.missione-item--completata .missione-item__fill {
+  background: var(--success);
+  width: 100% !important;
+}
+
+.missione-item__prog {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+}
+
+.missione-item__ok {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.card--classifica-scroll {
+  overflow-x: auto;
+}
+
+.data-table--classifica th,
+.data-table--classifica td {
+  white-space: nowrap;
+}
+
+.classifica-row--io {
+  background: var(--primary-light);
+}
+
+.classifica-tu {
+  color: var(--primary-dark);
+  font-weight: 600;
+}
+
+.classifica-medaglia {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 800;
+  color: white;
+}
+
+.classifica-medaglia--1 {
+  background: #eab308;
+}
+
+.classifica-medaglia--2 {
+  background: #94a3b8;
+}
+
+.classifica-medaglia--3 {
+  background: #b45309;
+}
+
+.card--mia-posizione {
+  margin-bottom: 1rem;
+  border-left: 4px solid var(--primary);
 }

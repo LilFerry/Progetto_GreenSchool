@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/sessione_helpers.php';
 require_once __DIR__ . '/includes/simulatore.php';
+require_once __DIR__ . '/includes/gamification_helpers.php';
 
 $data = read_json_body();
 $idSessione = trim((string) ($data['id_sessione'] ?? ''));
@@ -116,12 +117,34 @@ try {
         }
     }
 
+    $gamification = null;
+    $idUtente = trim((string) ($aggiornati['sessione']['id_utente'] ?? ''));
+    $kwhSessione = (float) ($aggiornati['sessione']['quantita_kwh'] ?? 0);
+    $idStazione = trim((string) ($aggiornati['sessione']['id_stazione'] ?? ''));
+    if ($idStazione === '' && !empty($aggiornati['accumulatore']['id_stazione'])) {
+        $idStazione = (string) $aggiornati['accumulatore']['id_stazione'];
+    }
+    if ($idUtente !== '' && $kwhSessione > 0) {
+        try {
+            $gamification = gamification_processa_ricarica_completata(
+                $pdo,
+                $idUtente,
+                $kwhSessione,
+                $idStazione
+            );
+        } catch (Throwable $gamEx) {
+            // La chiusura sessione non deve fallire se la gamification ha problemi
+            $gamification = ['errore' => $gamEx->getMessage()];
+        }
+    }
+
     json_response([
         'status' => 'success',
         'message' => 'Sessione terminata; dati salvati su database e storico',
         'data' => array_merge($aggiornati, [
             'simulatore' => $sim['body']['data'] ?? null,
             'accumulatori_stazione' => $tuttiAcc,
+            'gamification' => $gamification,
         ]),
     ]);
 

@@ -5,7 +5,29 @@
 
 function simulatore_base_url(): string
 {
-    return rtrim(getenv('SIMULATORE_URL') ?: 'http://127.0.0.1:5050', '/');
+    $url = getenv('SIMULATORE_URL');
+    if ($url === false || $url === '') {
+        $url = $_SERVER['SIMULATORE_URL'] ?? '';
+    }
+    if ($url === '') {
+        $url = 'http://127.0.0.1:5050';
+    }
+    return rtrim($url, '/');
+}
+
+function simulatore_errore_leggibile(?string $curlErr, string $url): string
+{
+    $err = trim((string) $curlErr);
+    if ($err === '') {
+        return 'Simulatore non raggiungibile.';
+    }
+    if (stripos($err, 'Failed to connect') !== false || stripos($err, 'Connection refused') !== false) {
+        return 'Simulatore Python non avviato o porta errata. '
+            . "URL configurato: {$url}. "
+            . 'Apri un terminale in cartella simulatore, esegui: python main.py '
+            . '(porta 5050). Poi verifica nel browser: ' . $url . '/health';
+    }
+    return $err;
 }
 
 /**
@@ -39,7 +61,7 @@ function simulatore_request(string $method, string $path, ?array $payload = null
                 'ok' => false,
                 'http_code' => 0,
                 'body' => null,
-                'error' => $curlErr ?: 'Simulatore non raggiungibile',
+                'error' => simulatore_errore_leggibile($curlErr, $url),
             ];
         }
     } else {
@@ -127,7 +149,12 @@ function simulatore_termina(?string $id_sessione = null, ?string $id_punto = nul
     curl_close($ch);
 
     if ($raw === false) {
-        return ['ok' => false, 'http_code' => 0, 'body' => null, 'error' => 'Simulatore non raggiungibile'];
+        return [
+            'ok' => false,
+            'http_code' => 0,
+            'body' => null,
+            'error' => simulatore_errore_leggibile('Failed to connect', $url),
+        ];
     }
     $body = json_decode($raw, true);
     if (!is_array($body)) {

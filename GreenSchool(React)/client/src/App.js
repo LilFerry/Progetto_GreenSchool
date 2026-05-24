@@ -335,6 +335,154 @@ function PannelloColonnine({
   );
 }
 
+function BarraXp({ profilo }) {
+  if (!profilo) return null;
+  const pct = Number(profilo.percentuale_livello ?? 0);
+  return (
+    <div className="xp-bar-wrap">
+      <div className="xp-bar-meta">
+        <span className="xp-bar-livello">Livello {profilo.livello}</span>
+        <span className="xp-bar-testo">
+          {profilo.xp_nel_livello} / {profilo.xp_per_prossimo_livello} XP
+        </span>
+      </div>
+      <div className="xp-bar-track" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <div className="xp-bar-fill" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="xp-bar-totale">{profilo.xp_totale} XP totali</p>
+    </div>
+  );
+}
+
+function ModalGuadagnoXp({ reward, onContinua }) {
+  const [displayXp, setDisplayXp] = useState(0);
+
+  useEffect(() => {
+    if (!reward?.xp_guadagnati) return undefined;
+    const target = reward.xp_guadagnati;
+    const steps = 28;
+    let step = 0;
+    const timer = setInterval(() => {
+      step += 1;
+      setDisplayXp(Math.round((target * step) / steps));
+      if (step >= steps) clearInterval(timer);
+    }, 35);
+    return () => clearInterval(timer);
+  }, [reward?.xp_guadagnati]);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') onContinua();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onContinua]);
+
+  if (!reward || !reward.xp_guadagnati) return null;
+
+  const missioni = reward.missioni_completate ?? [];
+
+  return (
+    <div
+      className="modal-overlay modal-overlay--xp"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-xp-titolo"
+      onClick={onContinua}
+    >
+      <div className="modal-card modal-card--xp" onClick={(e) => e.stopPropagation()}>
+        <div className="xp-celebration">
+          <span className="xp-celebration__icon" aria-hidden="true">
+            ⚡
+          </span>
+          <h2 id="modal-xp-titolo" className="xp-celebration__titolo">
+            +{displayXp} XP
+          </h2>
+          <p className="xp-celebration__sottotitolo">Ottimo lavoro! Ricarica completata.</p>
+        </div>
+
+        <ul className="xp-breakdown">
+          <li>
+            <span>Ricarica</span>
+            <strong>+{reward.xp_ricarica ?? 0} XP</strong>
+          </li>
+          {(reward.xp_bonus_missioni ?? 0) > 0 && (
+            <li>
+              <span>Missioni giornaliere</span>
+              <strong>+{reward.xp_bonus_missioni} XP</strong>
+            </li>
+          )}
+        </ul>
+
+        {missioni.length > 0 && (
+          <div className="xp-missioni-bonus">
+            <p className="xp-missioni-bonus__titolo">Missione completata!</p>
+            <ul>
+              {missioni.map((m) => (
+                <li key={m.codice}>
+                  {m.titolo} <span>+{m.xp_bonus} XP</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {reward.livello_salito && (
+          <p className="xp-level-up">
+            🎉 Sei salito al livello <strong>{reward.livello}</strong>!
+          </p>
+        )}
+
+        {reward.profilo && <BarraXp profilo={reward.profilo} />}
+
+        <button type="button" className="btn-primary btn-primary--wide" onClick={onContinua}>
+          Vedi riepilogo ricarica
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ListaMissioniGiornaliere({ missioni }) {
+  if (!missioni?.length) return null;
+  return (
+    <div className="card missioni-card">
+      <h2 className="section-title">Missioni giornaliere</h2>
+      <p className="page-subtitle">Si azzerano a mezzanotte. Completa le sfide per XP bonus.</p>
+      <ul className="missioni-lista">
+        {missioni.map((m) => (
+          <li
+            key={m.codice}
+            className={`missione-item${m.completata ? ' missione-item--completata' : ''}`}
+          >
+            <div className="missione-item__testa">
+              <strong>{m.titolo}</strong>
+              <span className="missione-item__bonus">+{m.xp_bonus} XP</span>
+            </div>
+            <p className="missione-item__desc">{m.descrizione}</p>
+            <div className="missione-item__barra">
+              <div
+                className="missione-item__fill"
+                style={{ width: `${m.percentuale}%` }}
+              />
+            </div>
+            <p className="missione-item__prog">
+              {m.completata ? (
+                <span className="missione-item__ok">Completata ✓</span>
+              ) : (
+                <>
+                  {m.progresso.toFixed(m.unita === 'kWh' ? 2 : 0)} / {m.target}{' '}
+                  {m.unita}
+                </>
+              )}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ModalRiepilogo({ riepilogo, stazioneNome, onChiudi }) {
   useEffect(() => {
     function onKey(e) {
@@ -485,6 +633,7 @@ function Navbar() {
         <>
           <Link to="/" className={linkClass('/')}>Dashboard</Link>
           <Link to="/mappa" className={linkClass('/mappa')}>Mappa</Link>
+          <Link to="/game" className={linkClass('/game')}>Classifica</Link>
           <Link to="/storico" className={linkClass('/storico')}>Storico</Link>
         </>
       )}
@@ -690,7 +839,203 @@ function PlaceholderPagina({ titolo }) {
 }
 
 function Dashboard() {
-  return <PlaceholderPagina titolo="Dashboard" />;
+  const { utente } = useAuth();
+  const [profilo, setProfilo] = useState(null);
+  const [missioni, setMissioni] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errore, setErrore] = useState(null);
+
+  useEffect(() => {
+    if (!utente?.id_utente) return undefined;
+
+    async function carica() {
+      setLoading(true);
+      setErrore(null);
+      try {
+        const res = await axios.get(`${API_URL}/gamification/profilo`, {
+          params: { id_utente: utente.id_utente },
+        });
+        if (res.status >= 400 || res.data?.status !== 'success') {
+          throw new Error(res.data?.message || 'Gamification non disponibile');
+        }
+        setProfilo(res.data.data.profilo);
+        setMissioni(res.data.data.missioni_oggi ?? []);
+      } catch (err) {
+        setErrore(
+          err.response?.data?.message || err.message || 'Impossibile caricare le sfide.'
+        );
+        setProfilo(null);
+        setMissioni([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    carica();
+  }, [utente?.id_utente]);
+
+  return (
+    <div className="dashboard-gamification">
+      <h1 className="page-title">Le tue sfide</h1>
+      <p className="page-subtitle">
+        Guadagna XP completando ricariche sulla mappa. Salire di livello sblocca il primato in
+        classifica.
+      </p>
+
+      {loading && <p>Caricamento profilo...</p>}
+      {errore && (
+        <p className="mappa-errore">
+          {errore}
+          <br />
+          <small>
+            Se il database è già attivo, esegui{' '}
+            <code>database/gamification_migration.sql</code> e sincronizza le API PHP.
+          </small>
+        </p>
+      )}
+
+      {!loading && profilo && (
+        <>
+          <div className="card card--xp-summary">
+            <div className="xp-summary-header">
+              <span className="xp-summary-badge">Liv. {profilo.livello}</span>
+              <div>
+                <p className="xp-summary-stat">
+                  <strong>{profilo.ricariche_completate}</strong> ricariche
+                </p>
+                <p className="xp-summary-stat">
+                  <strong>{Number(profilo.kwh_totali).toFixed(1)}</strong> kWh totali
+                </p>
+              </div>
+            </div>
+            <BarraXp profilo={profilo} />
+            <Link to="/game" className="btn-secondary btn-secondary--inline">
+              Vedi classifica utenti →
+            </Link>
+          </div>
+          <ListaMissioniGiornaliere missioni={missioni} />
+          <div className="card">
+            <h2 className="section-title">Prossimo passo</h2>
+            <p className="page-subtitle" style={{ marginTop: 0 }}>
+              Avvia una ricarica dalla mappa per guadagnare XP e avanzare nelle missioni di oggi.
+            </p>
+            <Link to="/mappa" className="btn-primary">
+              Vai alla mappa
+            </Link>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Classifica() {
+  const { utente } = useAuth();
+  const [classifica, setClassifica] = useState([]);
+  const [miaPosizione, setMiaPosizione] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [errore, setErrore] = useState(null);
+
+  useEffect(() => {
+    if (!utente?.id_utente) return undefined;
+
+    async function carica() {
+      setLoading(true);
+      setErrore(null);
+      try {
+        const res = await axios.get(`${API_URL}/gamification/classifica`, {
+          params: { limite: 50, id_utente: utente.id_utente },
+        });
+        if (res.status >= 400 || res.data?.status !== 'success') {
+          throw new Error(res.data?.message || 'Errore classifica');
+        }
+        setClassifica(res.data.data.classifica ?? []);
+        setMiaPosizione(res.data.data.mia_posizione ?? null);
+      } catch (err) {
+        setErrore(err.response?.data?.message || err.message || 'Classifica non disponibile.');
+        setClassifica([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    carica();
+  }, [utente?.id_utente]);
+
+  return (
+    <div>
+      <h1 className="page-title">Classifica utenti</h1>
+      <p className="page-subtitle">
+        Tutti gli utenti ordinati per XP totali. Gli amministratori non partecipano.
+      </p>
+
+      {loading && <p>Caricamento...</p>}
+      {errore && <p className="mappa-errore">{errore}</p>}
+
+      {miaPosizione && (
+        <div className="card card--mia-posizione">
+          <p>
+            La tua posizione: <strong>#{miaPosizione.posizione}</strong>
+            {miaPosizione.fuori_top && ' (fuori dalla top 50)'}
+          </p>
+          <p>
+            {miaPosizione.xp_totale} XP · Livello {miaPosizione.livello} ·{' '}
+            {miaPosizione.ricariche_completate} ricariche
+          </p>
+        </div>
+      )}
+
+      {!loading && !errore && classifica.length === 0 && (
+        <p>Nessun punteggio ancora. Sii il primo a ricaricare!</p>
+      )}
+
+      {!loading && classifica.length > 0 && (
+        <div className="card card--classifica-scroll">
+          <table className="data-table data-table--classifica">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Utente</th>
+                <th>Livello</th>
+                <th>XP</th>
+                <th>Ricariche</th>
+                <th>kWh</th>
+              </tr>
+            </thead>
+            <tbody>
+              {classifica.map((r) => {
+                const sonoIo = r.id_utente === utente?.id_utente;
+                return (
+                  <tr
+                    key={r.id_utente}
+                    className={sonoIo ? 'classifica-row--io' : undefined}
+                  >
+                    <td>
+                      {r.posizione <= 3 ? (
+                        <span className={`classifica-medaglia classifica-medaglia--${r.posizione}`}>
+                          {r.posizione}
+                        </span>
+                      ) : (
+                        r.posizione
+                      )}
+                    </td>
+                    <td>
+                      <strong>{r.nome_visualizzato}</strong>
+                      {sonoIo && <span className="classifica-tu"> (tu)</span>}
+                    </td>
+                    <td>{r.livello}</td>
+                    <td>
+                      <strong>{r.xp_totale}</strong>
+                    </td>
+                    <td>{r.ricariche_completate}</td>
+                    <td>{r.kwh_totali}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function etichettaStatoRicarica(stato) {
@@ -1415,9 +1760,11 @@ function Mappa() {
   const [terminaInCorso, setTerminaInCorso] = useState(false);
   const [messaggioSessione, setMessaggioSessione] = useState(null);
   const [riepilogoSessione, setRiepilogoSessione] = useState(null);
+  const [xpReward, setXpReward] = useState(null);
   const [erroreAzione, setErroreAzione] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errore, setErrore] = useState(null);
+  const [avvisoSimulatore, setAvvisoSimulatore] = useState(null);
 
   const stazioneSelezionata =
     stazioni.find((s) => String(s.id) === String(stazioneSelezionataId ?? '')) ??
@@ -1505,6 +1852,30 @@ function Mappa() {
     caricaDati();
   }, []);
 
+  useEffect(() => {
+    if (isAdmin) return undefined;
+    let attivo = true;
+    axios
+      .get(`${API_URL}/simulatore/health`)
+      .then((res) => {
+        if (!attivo || res.data?.status === 'success') return;
+        setAvvisoSimulatore(
+          res.data?.message ||
+            'Simulatore Python non attivo. Avvia python simulatore/main.py (porta 5050).'
+        );
+      })
+      .catch(() => {
+        if (attivo) {
+          setAvvisoSimulatore(
+            'Impossibile verificare il simulatore. Controlla che Node (3001), Apache e python main.py (5050) siano avviati.'
+          );
+        }
+      });
+    return () => {
+      attivo = false;
+    };
+  }, [isAdmin]);
+
   function selezionaStazione(id) {
     const nuova = String(id);
     const giaSelezionata = nuova === String(stazioneSelezionataId ?? '');
@@ -1564,9 +1935,21 @@ function Mappa() {
 
   function chiudiRiepilogo() {
     setRiepilogoSessione(null);
+    setXpReward(null);
     setMessaggioSessione(null);
     if (stazioneSelezionataId && accumulatoreSelezionatoId) {
       caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
+    }
+  }
+
+  function chiudiXpMostraRiepilogo() {
+    setXpReward(null);
+  }
+
+  function applicaGamificationDaRisposta(gamification) {
+    if (isAdmin || !gamification || gamification.errore) return;
+    if ((gamification.xp_guadagnati ?? 0) > 0) {
+      setXpReward(gamification);
     }
   }
 
@@ -1688,6 +2071,7 @@ function Mappa() {
         d.simulatore?.sessione ?? statoLive,
         sessioneAttiva.identificativo
       );
+      applicaGamificationDaRisposta(d.gamification);
       if (stazioneSelezionataId && accumulatoreSelezionatoId) {
         await caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
       }
@@ -1730,6 +2114,7 @@ function Mappa() {
           const sess = res.data.data.sessione;
           const idColonnina = sessioneAttiva.identificativo;
           applicaRiepilogoDaSessione(sess, live, idColonnina);
+          applicaGamificationDaRisposta(res.data.data?.gamification);
           setSessioneAttiva(null);
           setStatoLive(null);
           setColonninaSelezionataId(null);
@@ -1799,10 +2184,16 @@ function Mappa() {
         </p>
       )}
 
+      {avvisoSimulatore && !isAdmin && (
+        <p className="mappa-errore mappa-errore--simulatore">{avvisoSimulatore}</p>
+      )}
+
       {erroreAzione && <p className="mappa-errore">{erroreAzione}</p>}
 
+      <ModalGuadagnoXp reward={xpReward} onContinua={chiudiXpMostraRiepilogo} />
+
       <ModalRiepilogo
-        riepilogo={riepilogoSessione}
+        riepilogo={xpReward ? null : riepilogoSessione}
         stazioneNome={stazioneSelezionata?.nome}
         onChiudi={chiudiRiepilogo}
       />
@@ -1964,7 +2355,14 @@ function AppShell() {
                     }
                   />
                   <Route path="/scuola" element={<Navigate to="/" replace />} />
-                  <Route path="/game" element={<Navigate to="/" replace />} />
+                  <Route
+                    path="/game"
+                    element={
+                      <SoloUtente>
+                        <Classifica />
+                      </SoloUtente>
+                    }
+                  />
                   <Route
                     path="/admin"
                     element={
