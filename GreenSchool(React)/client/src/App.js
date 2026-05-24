@@ -256,7 +256,7 @@ function PannelloColonnine({
   onSelezionaColonnina,
   onAvviaSessione,
   avvioInCorso,
-  soloLettura,
+  soloLettura = false,
 }) {
   return (
     <div className="card card--colonnine">
@@ -1853,7 +1853,6 @@ function Mappa() {
   }, []);
 
   useEffect(() => {
-    if (isAdmin) return undefined;
     let attivo = true;
     axios
       .get(`${API_URL}/simulatore/health`)
@@ -1874,7 +1873,7 @@ function Mappa() {
     return () => {
       attivo = false;
     };
-  }, [isAdmin]);
+  }, []);
 
   function selezionaStazione(id) {
     const nuova = String(id);
@@ -1953,11 +1952,6 @@ function Mappa() {
     }
   }
 
-  function selezionaColonnina(idPunto) {
-    setColonninaSelezionataId(idPunto);
-    setErroreAzione(null);
-  }
-
   function messaggioErroreApi(err, fallback) {
     const data = err.response?.data;
     if (typeof data === 'string' && data.trim().startsWith('<')) {
@@ -1988,8 +1982,12 @@ function Mappa() {
     return {};
   }
 
+  function selezionaColonnina(idPunto) {
+    setColonninaSelezionataId(idPunto);
+    setErroreAzione(null);
+  }
+
   async function avviaSessione() {
-    if (isAdmin) return;
     if (!colonninaSelezionataId || !accumulatoreSelezionatoId) return;
     setAvvioInCorso(true);
     setErroreAzione(null);
@@ -2065,7 +2063,6 @@ function Mappa() {
       }
       setSessioneAttiva(null);
       setStatoLive(null);
-      setColonninaSelezionataId(null);
       applicaRiepilogoDaSessione(
         { ...d.sessione, ...durata },
         d.simulatore?.sessione ?? statoLive,
@@ -2117,7 +2114,6 @@ function Mappa() {
           applicaGamificationDaRisposta(res.data.data?.gamification);
           setSessioneAttiva(null);
           setStatoLive(null);
-          setColonninaSelezionataId(null);
           if (stazioneSelezionataId && accumulatoreSelezionatoId) {
             caricaColonnine(stazioneSelezionataId, accumulatoreSelezionatoId);
           }
@@ -2175,16 +2171,9 @@ function Mappa() {
       <h1 className="page-title">Mappa stazioni</h1>
       <p className="page-subtitle">
         {stazioni.length} stazioni · {totaleAccumulatori} accumulatori
-        {isAdmin && ' · modalità consultazione'}
       </p>
 
-      {isAdmin && (
-        <p className="sessione-msg mappa-admin-hint">
-          Account amministratore: puoi esplorare stazioni e colonnine ma non avviare ricariche.
-        </p>
-      )}
-
-      {avvisoSimulatore && !isAdmin && (
+      {avvisoSimulatore && (
         <p className="mappa-errore mappa-errore--simulatore">{avvisoSimulatore}</p>
       )}
 
@@ -2293,11 +2282,10 @@ function Mappa() {
             <PannelloColonnine
               colonnine={colonnine}
               colonnineLoading={colonnineLoading}
-              colonninaSelezionataId={isAdmin ? null : colonninaSelezionataId}
+              colonninaSelezionataId={colonninaSelezionataId}
               onSelezionaColonnina={selezionaColonnina}
               onAvviaSessione={avviaSessione}
               avvioInCorso={avvioInCorso}
-              soloLettura={isAdmin}
             />
           )}
         </>
