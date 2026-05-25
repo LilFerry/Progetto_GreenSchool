@@ -1323,7 +1323,7 @@ function Scuola() {
         <>
           {/* Sezione Informazioni Scuola */}
           <div className="card card--scuola-info">
-            <h2 className="section-title">Istituto Tecnico Barsan Galilei</h2>
+            <h2 className="section-title">Istituto Tecnico Barsanti Galilei</h2>
             <p className="scuola-descrizione">
               Partecipazione attiva al progetto Green School con focus sulla sostenibilità energetica
               e sulla mobilità elettrica.
