@@ -239,6 +239,7 @@ function ListaAccumulatori({
                             ? 'accumulatore-riga-card accumulatore-riga-card--selected'
                             : 'accumulatore-riga-card'
                         }
+                        disabled={!disp.ok}
                         onClick={() => onSeleziona(acc.id_accumulatore)}
                       >
                         <strong>{acc.nome ?? 'Accumulatore'}</strong>
@@ -2183,8 +2184,18 @@ function Mappa() {
     setAccumulatoreSelezionatoId(idAcc);
     setColonninaSelezionataId(null);
     setColonnine(null);
-    if (stazioneSelezionataId) {
+    
+    // Verifica se l'accumulatore è disponibile
+    const acc = accumulatori.find((a) => String(a.id_accumulatore) === idAcc);
+    const disponibilita = testoDisponibilitaAcc(acc);
+    
+    // Carica colonnine solo se disponibile
+    if (stazioneSelezionataId && disponibilita.ok) {
       caricaColonnine(stazioneSelezionataId, idAcc);
+    } else if (!disponibilita.ok) {
+      // Se non disponibile, mostra il messaggio
+      setErroreAzione(`Accumulatore non disponibile: ${disponibilita.testo}`);
+      setColonnine(null);
     }
   }
 
